@@ -16,3 +16,20 @@ def client() -> TestClient:
 def mock_settings() -> Settings:
     """Provides standard test settings instance."""
     return get_settings()
+
+
+@pytest.fixture(autouse=True)
+def clean_ledger_state():
+    """Ensure test isolation by clearing ledger repository state between tests."""
+    try:
+        from backend.ledger.models import ledger_repo
+        ledger_repo.clear()
+    except Exception:
+        pass
+    yield
+    try:
+        from backend.ledger.models import ledger_repo
+        ledger_repo.clear()
+    except Exception:
+        pass
+
