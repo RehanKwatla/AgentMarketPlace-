@@ -55,7 +55,7 @@ frontend/build/
 *.sqlite3
 *.db
 local_data/
-data/
+/data/
 *.log
 
 # IDE & OS
