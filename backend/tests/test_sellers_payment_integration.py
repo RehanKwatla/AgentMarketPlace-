@@ -653,3 +653,163 @@ def test_end_to_end_local_buyer_seller_handshake_flow(client):
         app.dependency_overrides.pop(get_payment_verifier, None)
 
 
+# ==============================================================================
+# 9. ADVANCED PAYMENT BOUNDARY & SECURITY INVARIANT TESTS (Section 11)
+# ==============================================================================
+
+def test_service_id_mismatch_fails_closed(client):
+    """Verify that a payment payload signed for a different service_id is rejected and never executes seller."""
+    seller_executed = False
+
+    class TrackingDataService(DataSellerService):
+        async def _execute_business_logic(self, payload, context):
+            nonlocal seller_executed
+            seller_executed = True
+            return await super()._execute_business_logic(payload, context)
+
+    class ServiceIdCheckingVerifier(SellerPaymentVerifierInterface):
+        def issue_challenge(self, service_id, amount_units, pay_to):
+            return PaymentRequirement(
+                version="2.0", network=NETWORK_BASE_SEPOLIA, token=USDC_BASE_SEPOLIA,
+                amount=str(amount_units), payTo=pay_to, nonce="nonce_svc", service_id=service_id
+            )
+        async def verify_and_settle(self, payload, req):
+            auth = payload.authorization if isinstance(payload.authorization, dict) else {}
+            payload_svc = auth.get("service_id")
+            if payload_svc and payload_svc != req.service_id:
+                raise ValueError(f"Service ID mismatch: {payload_svc} != {req.service_id}")
+            return SettlementReceipt(facilitator_receipt_id="rec_svc_ok", settled_amount_units=int(req.amount))
+
+    app.dependency_overrides[get_data_seller_service] = lambda: TrackingDataService()
+    app.dependency_overrides[get_payment_verifier] = lambda: ServiceIdCheckingVerifier()
+    try:
+        mismatched_payload = {
+            HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
+                "authorization": {
+                    "network": NETWORK_BASE_SEPOLIA,
+                    "token": USDC_BASE_SEPOLIA,
+                    "payTo": "0x0000000000000000000000000000000000000001",
+                    "amount": "2000",
+                    "service_id": "inference_001",  # Wrong service! Calling /data which is data_001
+                },
+                "signature": "0x123",
+                "buyer_address": "0x0000000000000000000000000000000000000000"
+            })
+        }
+        res = client.post("/api/v1/seller/data", json={"symbol": "BTC"}, headers=mismatched_payload)
+        assert res.status_code == status.HTTP_402_PAYMENT_REQUIRED
+        assert "Service ID mismatch" in res.json()["message"]
+        assert not seller_executed
+    finally:
+        app.dependency_overrides.pop(get_data_seller_service, None)
+        app.dependency_overrides.pop(get_payment_verifier, None)
+
+
+def test_replay_or_duplicate_nonce_fails_closed(client):
+    """Verify that submitting an already-spent nonce is rejected by the verifier and prevents duplicate seller execution."""
+    seller_run_count = 0
+    seen_nonces = set()
+
+    class TrackingInferenceService(InferenceSellerService):
+        async def _execute_business_logic(self, payload, context):
+            nonlocal seller_run_count
+            seller_run_count += 1
+            return await super()._execute_business_logic(payload, context)
+
+    class ReplayCheckingVerifier(SellerPaymentVerifierInterface):
+        def issue_challenge(self, service_id, amount_units, pay_to):
+            return PaymentRequirement(
+                version="2.0", network=NETWORK_BASE_SEPOLIA, token=USDC_BASE_SEPOLIA,
+                amount=str(amount_units), payTo=pay_to, nonce="nonce_replay_test", service_id=service_id
+            )
+        async def verify_and_settle(self, payload, req):
+            auth = payload.authorization if isinstance(payload.authorization, dict) else {}
+            nonce = auth.get("nonce", "default_nonce")
+            if nonce in seen_nonces:
+                raise ValueError(f"Replay detected: nonce '{nonce}' has already been spent.")
+            seen_nonces.add(nonce)
+            return SettlementReceipt(facilitator_receipt_id=f"rec_nonce_{nonce}", settled_amount_units=int(req.amount))
+
+    app.dependency_overrides[get_inference_seller_service] = lambda: TrackingInferenceService()
+    app.dependency_overrides[get_payment_verifier] = lambda: ReplayCheckingVerifier()
+    try:
+        replay_headers = {
+            HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
+                "authorization": {
+                    "network": NETWORK_BASE_SEPOLIA,
+                    "token": USDC_BASE_SEPOLIA,
+                    "payTo": "0x0000000000000000000000000000000000000003",
+                    "amount": "4000",
+                    "nonce": "nonce_spent_once"
+                },
+                "signature": "0x_sig_replay_1",
+                "buyer_address": "0x0000000000000000000000000000000000000000"
+            })
+        }
+        # First call: succeeds
+        res1 = client.post("/api/v1/seller/inference", json={"prompt": "Hello"}, headers=replay_headers)
+        assert res1.status_code == status.HTTP_200_OK
+        assert seller_run_count == 1
+
+        # Second call (replay with exact same nonce): fails closed
+        res2 = client.post("/api/v1/seller/inference", json={"prompt": "Hello"}, headers=replay_headers)
+        assert res2.status_code == status.HTTP_402_PAYMENT_REQUIRED
+        assert "Replay detected" in res2.json()["message"]
+        # Invariant: seller was NOT executed a second time
+        assert seller_run_count == 1
+    finally:
+        app.dependency_overrides.pop(get_inference_seller_service, None)
+        app.dependency_overrides.pop(get_payment_verifier, None)
+
+
+def test_concurrent_seller_requests_handling(client):
+    """Verify that concurrent seller requests each generate unique nonces and operate independently."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def send_challenge_request(symbol: str):
+        return client.post("/api/v1/seller/data", json={"symbol": symbol})
+
+    symbols = ["ETH", "BTC", "SOL", "LINK", "AVAX"]
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        responses = list(executor.map(send_challenge_request, symbols))
+
+    assert len(responses) == 5
+    nonces = set()
+    for res in responses:
+        assert res.status_code == status.HTTP_402_PAYMENT_REQUIRED
+        req = json.loads(res.headers[HEADER_X402_REQUIREMENT])
+        assert req["service_id"] == "data_001"
+        nonces.add(req["nonce"])
+
+    # All generated nonces in concurrent requests must be distinct
+    assert len(nonces) == 5
+
+
+def test_no_credential_or_private_key_leakage_in_error_responses(client):
+    """Verify that under any payment error or failure, secrets/private keys are never leaked in responses."""
+    class CrashingVerifier(SellerPaymentVerifierInterface):
+        def issue_challenge(self, service_id, amount_units, pay_to):
+            return PaymentRequirement(
+                version="2.0", network=NETWORK_BASE_SEPOLIA, token=USDC_BASE_SEPOLIA,
+                amount=str(amount_units), payTo=pay_to, nonce="nonce_sec", service_id=service_id
+            )
+        async def verify_and_settle(self, payload, req):
+            # Simulate an internal DB/RPC exception that might contain private credentials
+            raise RuntimeError("Database connection string postgres://admin:SuperSecretPassword123@db:5432/db failed")
+
+    app.dependency_overrides[get_payment_verifier] = lambda: CrashingVerifier()
+    try:
+        headers = {
+            HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
+                "authorization": {"amount": "2000"},
+                "signature": "0x123",
+                "buyer_address": "0x0000000000000000000000000000000000000000"
+            })
+        }
+        res = client.post("/api/v1/seller/data", json={"symbol": "BTC"}, headers=headers)
+        assert res.status_code == status.HTTP_402_PAYMENT_REQUIRED
+        raw_text = res.text
+        assert "SuperSecretPassword123" not in raw_text
+        assert "postgres://" not in raw_text
+    finally:
+        app.dependency_overrides.pop(get_payment_verifier, None)

@@ -61,8 +61,9 @@ def get_payment_verifier() -> Optional[SellerPaymentVerifierInterface]:
     
     Checks in priority order:
     1. Member 1's get_seller_payment_verifier() if implemented in backend.payments.
-    2. Member 1's seller_payment_verifier singleton if implemented in backend.payments.settlement.
-    3. Defaults to None (fail-closed) when not yet configured or in test environments.
+    2. Member 1's seller_payment_verifier singleton if exported in backend.payments.
+    3. Member 1's seller_payment_verifier singleton if implemented in backend.payments.settlement.
+    4. Defaults to None (fail-closed) when not yet configured or in test environments.
     """
     if get_seller_payment_verifier is not None:
         try:
@@ -71,6 +72,12 @@ def get_payment_verifier() -> Optional[SellerPaymentVerifierInterface]:
                 return v
         except Exception:
             pass
+    try:
+        from backend.payments import seller_payment_verifier
+        if isinstance(seller_payment_verifier, SellerPaymentVerifierInterface):
+            return seller_payment_verifier
+    except (ImportError, AttributeError):
+        pass
     try:
         from backend.payments.settlement import seller_payment_verifier
         if isinstance(seller_payment_verifier, SellerPaymentVerifierInterface):
@@ -304,15 +311,25 @@ async def _verify_and_execute_seller(
         try:
             receipt = await verifier.verify_and_settle(payment_payload, requirement)
         except Exception as verif_err:
-            logger.warning(
-                "Payment verification failed for service %s (req=%s): %s",
-                service_id, context.request_id, verif_err
-            )
+            err_str = str(verif_err)
+            if any(s in err_str.lower() for s in ["password", "secret", "private", "postgres", "mysql", "redis", "mongodb"]):
+                logger.warning(
+                    "Payment verification failed for service %s (req=%s) with internal system error (redacted)",
+                    service_id, context.request_id
+                )
+                safe_msg = "Internal verification system error."
+            else:
+                logger.warning(
+                    "Payment verification failed for service %s (req=%s): %s",
+                    service_id, context.request_id, err_str
+                )
+                safe_msg = err_str
+
             return JSONResponse(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 content={
                     "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                    "message": f"Payment authorization rejected: {verif_err}",
+                    "message": f"Payment authorization rejected: {safe_msg}",
                     "service_id": service_id,
                     "request_id": context.request_id,
                 },
