@@ -322,3 +322,40 @@
   13. Budget reservation and release behavior verified across all 5 lifecycle outcomes.
 - Test Suite Execution: **80 of 80 tests passed in 2.18s (100% pass rate)**.
 - `git diff --check` passed cleanly with 0 whitespace errors.
+
+### Step 17: Member 2 — Step 5A Independent Seller Testing (While M1 Implements x402)
+- Operating on branch `M2`.
+- Audited seller foundation across `backend/sellers/common.py`, `dependencies.py`, `routes.py`, `schemas.py`, `data_seller.py`, `scraping_seller.py`, and `inference_seller.py`.
+- Corrected two critical safety defects in seller route handling (`backend/sellers/routes.py`):
+  1. *Fail-closed on None receipt*: If a payment verifier returns `None` instead of raising or returning a `SettlementReceipt`, the route fails closed with HTTP 402 `PAYMENT_AUTHORIZATION_FAILED` rather than executing seller logic.
+  2. *Exception sanitization*: Updated `_handle_seller_exception` to sanitize `SellerExecutionError` responses with `"Internal execution error occurred within seller logic."`, preventing internal secrets, DB credentials, or sensitive exception strings from leaking to clients.
+- Expanded automated test coverage in `backend/tests/test_sellers.py` and `backend/tests/test_sellers_foundation.py`:
+  - Verified `BaseSellerService` inheritance, canonical IDs (`data_001`, `scraping_001`, `inference_001`), and input/output Pydantic schemas.
+  - Verified invalid output rejection across concrete seller services (`SellerOutputValidationError`).
+  - Verified execution metrics population (`duration_ms`, `success`, `output_validated`, `request_id`, `service_id`).
+  - Verified async timeout cancellation (`asyncio.wait_for` cancelling cooperative coroutines).
+  - Verified FastAPI dependency overrides across all three seller services.
+  - Verified mock-based payment boundary safety: verified seller business logic is NEVER executed on missing, malformed, unverified, crashing, or None-receipt payment states.
+- Verified test suite: **64 of 64 tests passed (100% pass rate)**.
+- Verified zero payment files modified (`backend/payments/` untouched).
+
+### Step 18: Member 2 — Phase 1 Completion & Stage D Seller-Payment Integration
+- Operating on branch `M2` (tracking seller subsystem ownership).
+- **Repository & Payment Contract Audit:**
+  - Audited `origin/M1` (commit `f1fc38f`). Discovered that Member 1 implemented `SellerPaymentVerifier` in `backend/payments/settlement.py`, but the reported helper functions `verify_seller_payment` and `get_seller_payment_verifier` in `backend/payments/dependencies.py` were not implemented on any branch.
+  - In strict compliance with Rule C (respecting `backend/payments/` ownership) and Rule E (no automatic force-merging of `origin/M1`), preserved existing clean dependency injection via `SellerPaymentVerifierInterface` while providing forward-compatible hook for `verify_seller_payment`.
+- **Phase 1 Seller Foundation Hardening:**
+  - Hardened `ScrapingSellerInput` (`backend/sellers/schemas.py`) with strict URL validation and pre-execution SSRF protection: blocking loopback (`127.0.0.1`, `::1`), private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), cloud metadata (`169.254.169.254`, `metadata.google.internal`), and non-HTTP schemes.
+  - Bounded `ScrapingSellerService` content length to 50,000 characters.
+  - Hardened `InferenceSellerInput` with whitespace stripping, max length bounds (10,000 chars), and token bounding (`max_tokens <= 2000`).
+  - Hardened `DataSellerInput` with whitespace stripping and alphanumeric ticker validation.
+- **Stage D Seller-Payment Integration (`backend/sellers/routes.py`):**
+  - Updated `_verify_and_execute_seller` to handle empty or whitespace-only payment headers as unprovided (issuing standard 402 challenge).
+  - Enforced strict fail-closed verification: rejecting unconfirmed/empty settlement proofs, verifying that `receipt.tx_hash` or `receipt.facilitator_receipt_id` exists before executing seller logic.
+  - Strictly enforced Zero Fabrication Rule: eliminated synthetic receipt generation; only authentic verifier-produced proof is attached to responses.
+  - Supported dynamic injection of `verify_seller_payment` if implemented in `backend.payments`, while safely defaulting to `SellerPaymentVerifierInterface`.
+- **Comprehensive Test Suite & Verification:**
+  - Created `backend/tests/test_sellers_payment_integration.py` with 17 dedicated tests covering challenges, fail-closed boundaries, SSRF blocks, input bounds, verbatim proof attachment, context/idempotency forwarding, terms mismatches, and full buyer-seller-ledger handshake.
+  - Ran full test suite via `python scripts/run_tests.py`: **81 of 81 tests passed (100% pass rate)**.
+  - Verified zero modifications to payment-owned files (`backend/payments/`).
+
