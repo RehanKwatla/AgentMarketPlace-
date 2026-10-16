@@ -181,11 +181,7 @@ class BuyerService:
         try:
             plan = self.planner.create_plan(request)
             self._task_plans[task_id] = plan
-            task_record.plan_summary = {
-                "worst_case_cost_units": plan.worst_case_cost_units,
-                "steps_count": len(plan.calls),
-                "services": [c.service_id for c in plan.calls]
-            }
+            task_record.plan_summary = plan.to_dict()
         except Exception as e:
             # Plan rejected before execution (e.g. over budget or invalid service)
             task_record.status = TaskStatus.REFUSED.value

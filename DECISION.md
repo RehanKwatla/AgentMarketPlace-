@@ -169,3 +169,23 @@ Premature payment execution upon task submission violates the principle of least
 - `BuyerService` coordinates atomic budget reservation with Member 1's `BudgetManager`.
 - Provenance and purchase explanation records capture all seller receipts and tx hashes transparently.
 
+---
+
+## Decision 10: Deterministic-First DAG Planner, Hard Eligibility Gating, and Pre-Payment Plan Validation
+
+### 1. Context & Problem
+In agentic commerce systems, planning without validation leads to hallucinated endpoints, budget overruns, cycles in execution graphs, and payment commitments for invalid or disabled services. Allowing a candidate's high reputation or low price to override a safety failure introduces critical vulnerabilities.
+
+### 2. Theory & Logic
+- **Hard Eligibility Gating (Gated Ranking):** A candidate service is never ranked unless it passes ALL hard eligibility gates first: active/enabled status, trusted registry origin, valid 42-char hex `pay_to` address, Base Sepolia network (`eip155:84532`), Base Sepolia USDC token (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`), positive atomic price within budget, and valid Draft-7 input/output schemas. A high ranking never overrides an eligibility check.
+- **Explicit DAG Architecture:** Multi-step workflows requiring Scraping, Data, and Inference are modeled as explicit Directed Acyclic Graphs (DAGs) partitioned into topological execution stages. Independent tasks (e.g. Scraping and Data) execute in parallel in Stage 0, while dependent tasks (e.g. Inference summarizing upstream data) execute in Stage 1.
+- **Authoritative Price Enforcement:** All prices, recipient addresses, and endpoints are resolved strictly from server-side registry records. Any client-provided prices or payment parameters are discarded.
+- **Worst-Case Pre-Computation:** Calculates worst-case total cost, including permitted fallbacks and allowances, before any paid call or budget reservation.
+- **Zero Payments on Plan Rejection:** If a plan contains missing dependencies, cycles, schema mismatches, duplicate calls, unsafe concurrency, or exceeds budget, it is rejected immediately and transitions to `refused` before any payment interface is invoked.
+
+### 3. How It Works
+- `ServiceSelector.check_eligibility()` filters candidates, and `rank_candidates()` scores remaining eligible candidates via multi-attribute utility (relevance 30%, reputation 35%, price 25%, latency 10%).
+- `TaskPlanner.create_plan()` generates an `ExecutionPlan` with dependency graph, topological stages, expected and worst-case cost, fallback allowances, and selection reasons.
+- `PlanValidator.validate_plan()` rigorously checks DAG acyclicity, schema compliance via `Draft7Validator`, authoritative server-side registry resolution, and concurrency limits.
+
+

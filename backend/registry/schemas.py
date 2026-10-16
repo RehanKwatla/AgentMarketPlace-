@@ -42,10 +42,50 @@ class ServiceRecord(BaseModel):
     enabled: bool = Field(default=True)
     is_demo_seed: bool = Field(default=True, description="True for demo/seed records, False for live registrations")
     registry_version: str = Field(default="1.0.0")
+    token: Optional[str] = Field(default=None, description="Alias for asset_address")
+    pay_to_address: Optional[str] = Field(default=None, description="Alias for pay_to")
+    capability: Optional[str] = Field(default=None, description="Primary capability URI")
     reputation: Optional[ServiceReputationSummary] = Field(default_factory=ServiceReputationSummary)
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_field_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if not data.get("pay_to") and data.get("pay_to_address"):
+                data["pay_to"] = data["pay_to_address"]
+            elif not data.get("pay_to_address") and data.get("pay_to"):
+                data["pay_to_address"] = data["pay_to"]
+
+            if not data.get("asset_address") and data.get("token"):
+                data["asset_address"] = data["token"]
+            elif not data.get("token") and data.get("asset_address"):
+                data["token"] = data["asset_address"]
+
+            if not data.get("capability") and data.get("capabilities"):
+                data["capability"] = data["capabilities"][0]
+            elif not data.get("capabilities") and data.get("capability"):
+                data["capabilities"] = [data["capability"]]
+        return data
 
     @model_validator(mode="after")
     def sync_prices_and_active(self) -> "ServiceRecord":
+        # Sync token and asset_address
+        if self.token:
+            self.asset_address = self.token
+        elif self.asset_address:
+            self.token = self.asset_address
+
+        # Sync pay_to and pay_to_address
+        if self.pay_to_address:
+            self.pay_to = self.pay_to_address
+        elif self.pay_to:
+            self.pay_to_address = self.pay_to
+
+        # Sync capability and capabilities
+        if self.capabilities and not self.capability:
+            self.capability = self.capabilities[0]
+        elif self.capability and not self.capabilities:
+            self.capabilities = [self.capability]
         if self.price_usdc and (self.price_atomic is None or self.price_atomic == 0):
             self.price_atomic = usdc_to_base_units(self.price_usdc)
         elif self.price_atomic > 0 and (not self.price_usdc or self.price_usdc == "0"):

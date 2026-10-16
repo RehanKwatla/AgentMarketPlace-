@@ -1,9 +1,9 @@
-"""Deterministic-First Task Planner creating validated execution DAGs."""
+"""Deterministic-First Task Planner creating validated execution DAGs using the Service Registry."""
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 from backend.shared.constants import ServiceCategory, usdc_to_base_units
 from backend.buyer.schemas import TaskCreationRequest
-from backend.buyer.plan_validator import ExecutionPlan, PlannedCall, PlanValidator
+from backend.buyer.plan_validator import ExecutionPlan, PlannedCall, PlanValidator, PlanValidationError
 from backend.buyer.selector import ServiceSelector
 
 
@@ -13,13 +13,18 @@ class TaskPlanner:
     def __init__(
         self,
         selector: Optional[ServiceSelector] = None,
-        validator: Optional[PlanValidator] = None
+        validator: Optional[PlanValidator] = None,
     ):
         self.selector = selector or ServiceSelector()
         self.validator = validator or PlanValidator()
 
     def create_plan(self, request: TaskCreationRequest) -> ExecutionPlan:
-        """Generate a deterministic multi-step plan based on prompt intent and category constraints."""
+        """Generate a deterministic multi-step plan based on prompt intent and category constraints.
+
+        Translates natural language into a structured execution DAG with explicit dependencies:
+        - Scraping and Data steps run independently (in parallel).
+        - Inference step depends on upstream Scraping and/or Data steps (sequential dependency).
+        """
         budget_units = usdc_to_base_units(request.budget_usdc)
         prompt_lower = (request.task or "").lower()
 
@@ -33,93 +38,159 @@ class TaskPlanner:
             need_data = ServiceCategory.DATA in request.preferred_categories
             need_inference = ServiceCategory.INFERENCE in request.preferred_categories
         else:
-            # Heuristic intent mapping
-            if any(w in prompt_lower for w in ["scrape", "web", "fetch", "url", "extract", "article", "http"]):
+            # Heuristic intent mapping to capabilities
+            if any(w in prompt_lower for w in ["scrape", "web", "fetch", "url", "extract", "article", "http", "site"]):
                 need_scraping = True
-            if any(w in prompt_lower for w in ["crypto", "price", "market", "data", "eth", "btc", "financial"]):
+            if any(w in prompt_lower for w in ["crypto", "price", "market", "data", "eth", "btc", "financial", "volume"]):
                 need_data = True
-            if any(w in prompt_lower for w in ["summarize", "analyze", "ai", "reasoning", "infer", "report"]) or not (need_scraping or need_data):
+            if any(w in prompt_lower for w in ["summarize", "analyze", "ai", "reasoning", "infer", "report", "synthesis", "takeaway"]) or not (need_scraping or need_data):
                 need_inference = True
 
         calls: List[PlannedCall] = []
+        reasons_for_selection: Dict[str, str] = {}
         step_id = 1
 
-        # 1. Scraping Step
+        # 1. Scraping Step (Parallel candidate in Stage 0)
         scraping_step_id: Optional[int] = None
         if need_scraping:
-            service = self.selector.select_service_for_category(
+            primary_svc, fallbacks, reason = self.selector.select_service_with_fallbacks(
                 category=ServiceCategory.SCRAPING,
-                max_budget_units=budget_units
+                max_budget_units=budget_units,
+                requested_capability="scraping.extract.v1",
+                task_intent=request.task,
             )
-            if service:
-                url_match = re.search(r"https?://[^\s]+", request.task or "")
-                target_url = url_match.group(0) if url_match else "https://ethereum.org"
-                scraping_step_id = step_id
-                calls.append(PlannedCall(
-                    step_id=scraping_step_id,
-                    category=ServiceCategory.SCRAPING.value,
-                    service_id=service.service_id,
-                    input_payload={"url": target_url},
-                    estimated_price_units=service.price_atomic,
-                    depends_on=[]
-                ))
-                step_id += 1
+            if not primary_svc:
+                raise PlanValidationError(
+                    f"Unable to select an eligible service for Scraping (budget: {budget_units} units). {reason}"
+                )
 
-        # 2. Data Step (Can execute concurrently with Scraping)
+            url_match = re.search(r"https?://[^\s]+", request.task or "")
+            target_url = url_match.group(0) if url_match else "https://ethereum.org"
+            scraping_step_id = step_id
+
+            fb_ids = [f.service_id for f in fallbacks]
+            max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
+
+            calls.append(PlannedCall(
+                step_id=scraping_step_id,
+                category=ServiceCategory.SCRAPING.value,
+                capability="scraping.extract.v1",
+                service_id=primary_svc.service_id,
+                fallback_service_ids=fb_ids,
+                input_payload={"url": target_url},
+                estimated_price_units=primary_svc.price_atomic,
+                worst_case_price_units=max_svc_price,
+                depends_on=[],
+                selection_reason=reason,
+                allow_fallback=True,
+            ))
+            reasons_for_selection[primary_svc.service_id] = reason
+            step_id += 1
+
+        # 2. Data Step (Parallel candidate in Stage 0)
         data_step_id: Optional[int] = None
         if need_data:
-            service = self.selector.select_service_for_category(
+            primary_svc, fallbacks, reason = self.selector.select_service_with_fallbacks(
                 category=ServiceCategory.DATA,
-                max_budget_units=budget_units
+                max_budget_units=budget_units,
+                requested_capability="data.lookup.v1",
+                task_intent=request.task,
             )
-            if service:
-                symbol = "ETH"
-                if "btc" in prompt_lower or "bitcoin" in prompt_lower:
-                    symbol = "BTC"
-                data_step_id = step_id
-                calls.append(PlannedCall(
-                    step_id=data_step_id,
-                    category=ServiceCategory.DATA.value,
-                    service_id=service.service_id,
-                    input_payload={"symbol": symbol},
-                    estimated_price_units=service.price_atomic,
-                    depends_on=[]
-                ))
-                step_id += 1
+            if not primary_svc:
+                raise PlanValidationError(
+                    f"Unable to select an eligible service for Data (budget: {budget_units} units). {reason}"
+                )
 
-        # 3. Inference Step (Depends on upstream context from Scraping and/or Data)
+            symbol = "ETH"
+            if "btc" in prompt_lower or "bitcoin" in prompt_lower:
+                symbol = "BTC"
+            data_step_id = step_id
+
+            fb_ids = [f.service_id for f in fallbacks]
+            max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
+
+            calls.append(PlannedCall(
+                step_id=data_step_id,
+                category=ServiceCategory.DATA.value,
+                capability="data.lookup.v1",
+                service_id=primary_svc.service_id,
+                fallback_service_ids=fb_ids,
+                input_payload={"symbol": symbol},
+                estimated_price_units=primary_svc.price_atomic,
+                worst_case_price_units=max_svc_price,
+                depends_on=[],
+                selection_reason=reason,
+                allow_fallback=True,
+            ))
+            reasons_for_selection[primary_svc.service_id] = reason
+            step_id += 1
+
+        # 3. Inference Step (Stage 1: depends on Scraping and/or Data)
         if need_inference:
-            service = self.selector.select_service_for_category(
+            primary_svc, fallbacks, reason = self.selector.select_service_with_fallbacks(
                 category=ServiceCategory.INFERENCE,
-                max_budget_units=budget_units
+                max_budget_units=budget_units,
+                requested_capability="inference.summarize.v1",
+                task_intent=request.task,
             )
-            if service:
-                deps = []
-                if scraping_step_id:
-                    deps.append(scraping_step_id)
-                if data_step_id:
-                    deps.append(data_step_id)
+            if not primary_svc:
+                raise PlanValidationError(
+                    f"Unable to select an eligible service for Inference (budget: {budget_units} units). {reason}"
+                )
 
-                calls.append(PlannedCall(
-                    step_id=step_id,
-                    category=ServiceCategory.INFERENCE.value,
-                    service_id=service.service_id,
-                    input_payload={"prompt": request.task, "max_tokens": 200},
-                    estimated_price_units=service.price_atomic,
-                    depends_on=deps
-                ))
-                step_id += 1
+            deps = []
+            if scraping_step_id:
+                deps.append(scraping_step_id)
+            if data_step_id:
+                deps.append(data_step_id)
 
-        worst_case_cost = sum(c.estimated_price_units for c in calls)
+            fb_ids = [f.service_id for f in fallbacks]
+            max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
+
+            calls.append(PlannedCall(
+                step_id=step_id,
+                category=ServiceCategory.INFERENCE.value,
+                capability="inference.summarize.v1",
+                service_id=primary_svc.service_id,
+                fallback_service_ids=fb_ids,
+                input_payload={"prompt": request.task, "max_tokens": 200},
+                estimated_price_units=primary_svc.price_atomic,
+                worst_case_price_units=max_svc_price,
+                depends_on=deps,
+                selection_reason=reason,
+                allow_fallback=True,
+            ))
+            reasons_for_selection[primary_svc.service_id] = reason
+            step_id += 1
+
+        expected_cost = sum(c.estimated_price_units for c in calls)
+        worst_case_cost = sum(c.worst_case_price_units for c in calls)
+        fallback_allowance = worst_case_cost - expected_cost
+
+        plan_explanation = (
+            f"Execution DAG created with {len(calls)} step(s). "
+            f"Expected cost: {expected_cost} base units. "
+            f"Worst-case cost: {worst_case_cost} base units (including fallbacks). "
+            f"Allocated budget: {budget_units} base units."
+        )
 
         plan = ExecutionPlan(
             task_prompt=request.task,
             budget_units=budget_units,
             calls=calls,
             worst_case_cost_units=worst_case_cost,
-            max_concurrency=request.max_concurrency
+            expected_cost_units=expected_cost,
+            fallback_allowances_units=fallback_allowance,
+            max_concurrency=request.max_concurrency,
+            reasons_for_selection=reasons_for_selection,
+            explanation=plan_explanation,
         )
 
         # Validate deterministically before returning
         self.validator.validate_plan(plan, concurrency_limit=request.max_concurrency)
         return plan
+
+    def plan_task(self, prompt: str, budget_usdc: str) -> Any:
+        """Backwards compatibility alias for older test fixtures."""
+        from backend.buyer.task_planner import TaskPlanner as LegacyPlanner
+        return LegacyPlanner().plan_task(prompt, budget_usdc)

@@ -112,3 +112,22 @@
 - Added test suites `backend/tests/test_registry.py` and `backend/tests/test_buyer_task_api.py`.
 - Ran test suite: **44 of 44 tests passed (100% pass rate)**.
 
+### Step 10: Deterministic-First Planner, Service Selector, and Plan Validator
+- Implemented `ServiceSelector` (`backend/buyer/selector.py`):
+  - Hard eligibility gates checking trusted registry membership, active/enabled status, valid metadata, 42-char hex `pay_to` address, Base Sepolia network, Base Sepolia USDC token, Draft-7 input/output schemas, and budget bounds.
+  - Multi-attribute ranking on remaining eligible candidates (relevance 30%, reputation 35%, price 25%, latency 10%).
+  - Fallback service candidate discovery and human-readable selection reasons.
+- Implemented `TaskPlanner` (`backend/buyer/planner.py`):
+  - Deterministic capability mapping (`scraping.extract.v1`, `data.lookup.v1`, `inference.summarize.v1`).
+  - Explicit DAG construction with parallel steps (Stage 0: Scraping + Data) and dependent steps (Stage 1: Inference).
+  - Pre-computes expected cost, fallback allowances, and worst-case cost.
+- Implemented `PlanValidator` (`backend/buyer/plan_validator.py`):
+  - Cycle detection using DFS graph traversal and topological sorting.
+  - Server-side registry resolution enforcing authoritative prices and discarding client-forged prices.
+  - Payload input schema verification using `Draft7Validator`.
+  - Duplicate call prevention and stage concurrency limit validation.
+  - Enforces that any plan exceeding budget or failing validation fails and transitions to `refused` before any payment interface is invoked.
+- Added comprehensive unit and integration tests in `backend/tests/test_planner_validator.py` (11 tests).
+- Ran entire test suite across all subsystems: **64 of 64 tests passed (100% pass rate in 2.14s)**.
+
+
