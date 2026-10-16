@@ -237,7 +237,7 @@
   - [`docs/PAYMENT_ENGINE_INTEGRATION.md`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/docs/PAYMENT_ENGINE_INTEGRATION.md)
   - [`docs/PAYMENT_ENGINE_PHASE2_CHECKLIST.md`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/docs/PAYMENT_ENGINE_PHASE2_CHECKLIST.md)
 
-### Step 10: Member 1 Phase 2 Implementation & Verification
+#### M1 - Step 10: Member 1 Phase 2 Implementation & Verification
 - Implemented full Payment Engine architecture in [`backend/payments/`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/):
   - `schemas.py`: `PaidCallRequest`, `PaidCallResult`, `PaymentStatus` (with `pending reconciliation`), `PaymentAttemptRecord`, `BudgetReservationRecord`.
   - `errors.py`: Standardized domain exceptions (`IdempotencyConflictError`, `SettlementVerificationError`, `SettlementTimeoutError`, `ServiceDisabledError`).
@@ -251,56 +251,44 @@
 - Created compatibility alias package at `backend/app/payments/` re-exporting all submodules to support both import paths.
 - Authored [`backend/tests/test_payment_engine.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_payment_engine.py) covering 6 comprehensive test scenarios.
 - Resolved catalog test fixture isolation: ensured test services are unregistered post-test.
-- Ran automated test suite: **38 of 38 tests passed in 0.38s (100% pass rate)**.
-- Maintained local-only working tree: **Zero unapproved pushes to remote.**
 
-### Step 11: Final Phase 1 Freeze Review & Corrections
+#### M1 - Step 11: Final Phase 1 Freeze Review & Corrections
 - Audited `X402Adapter`: Added `test_mode: bool = False` and strict fail-closed live signing. Live mode strictly forbids mock signatures if private key or `eth_account` is missing.
 - Audited `SettlementVerifier`: Added `test_mode: bool = False`, strictly distinguished on-chain RPC receipt status checking, facilitator verification stub, and defined `verify_full_settlement` interface. Live mode rejects unconfirmed hashes and never accepts mock receipts.
 - Audited `PaymentStatus` and `LedgerStatus`: Resolved suspense handling bug in `PaymentService._record_in_ledger`. Uncertain payments (`PENDING_RECONCILIATION`) are retained in an internal suspense store and NEVER recorded into the shared ledger as terminal `REFUSED` or `PAID`. Documented need for cross-team approval on `LedgerStatus.PENDING_RECONCILIATION`.
 - Verified `backend/app/payments/` compatibility alias: Tested singleton identity between `backend.app.payments` and `backend.payments`.
-- Expanded test suite in `backend/tests/test_payment_engine.py` with 4 new tests. Ran automated test suite: **42 of 42 tests passed in 2.02s**.
-- Audited and updated the 5 frozen documents in `docs/`: removed unsupported claims, harmonized x402 headers, and concluded readiness report with `READY TO FREEZE WITH EXPLICIT DEFERRED ITEMS`.
+- Expanded test suite in `backend/tests/test_payment_engine.py` with 4 new tests.
 
-### Step 12: Phase 2 Stage 1 — Dependencies & Official x402 SDK Compatibility
+#### M1 - Step 12: Phase 2 Stage 1 — Dependencies & Official x402 SDK Compatibility
 - Installed official protocol libraries in Python 3.14 environment: `x402==2.25.0`, `web3==8.0.0`, `eth-account==0.14.0`.
 - Enhanced [`backend/payments/x402_adapter.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/x402_adapter.py):
   - Added official schema translation: `to_official_payment_required()`, `from_official_payment_required()`, `encode_official_requirement()`, `decode_official_requirement()`, `encode_official_payload()`, `decode_official_payload()`.
   - Added dual-header transport compatibility: `build_payment_headers()` emits both official SDK headers (`PAYMENT-SIGNATURE`, `X-PAYMENT`) and application headers (`X-402-Payment-Payload`).
   - Added live cryptographic signing with `eth_account.messages.encode_defunct` and ECDSA signing with private keys, with complete cryptographic signature recovery verification.
 - Authored [`backend/tests/test_x402_sdk_compatibility.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_x402_sdk_compatibility.py) with 8 tests covering schema conversion, roundtrips, header parsing, fail-closed live boundaries, and ECDSA signature recovery.
-- All 8 tests passed.
 
-### Step 13: Phase 2 Stage 2 — 6-Point On-Chain Settlement Verification & Member 2 Interface
+#### M1 - Step 13: Phase 2 Stage 2 — 6-Point On-Chain Settlement Verification & Member 2 Interface
 - Enhanced [`backend/payments/settlement.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/settlement.py):
   - Defined `SettlementEvidence` model holding transaction receipt, decoded ERC-20 transfer logs, block numbers, and confirmation flags.
   - Implemented `decode_and_validate_transfer_logs()` decoding ERC-20 `Transfer(address,address,uint256)` event logs (topic `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef`) using `web3`.
   - Implemented strict 6-point verification in `verify_full_settlement()`: (1) network `eip155:84532`, (2) receipt status `0x1`, (3) token address `0x036CbD...`, (4) recipient `payTo`, (5) amount in atomic base units, (6) decoded ERC-20 Transfer log.
   - Implemented `SellerPaymentVerifier` providing Member 2 with challenge generation and payment verification methods enforcing fail-closed live validation.
 - Authored [`backend/tests/test_settlement_verification.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_settlement_verification.py) with 9 tests covering all 6 rejection branches and valid flows.
-- All 9 tests passed.
 
-### Step 14: Phase 2 Stage 3 — Durable Persistence & Restart Safety
+#### M1 - Step 14: Phase 2 Stage 3 — Durable Persistence & Restart Safety
 - Implemented persistent database models in [`backend/payments/models.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/models.py):
   - `PaymentAttemptModel`: Stores attempt ID, idempotency key, request hash, nonce, amount in base units, pay_to recipient, status, tx hash, proof, and timestamps.
   - `BudgetReservationModel`: Stores reservation ID, task ID, call ID, amount in base units, and status (`reserved`, `committed`, `released`).
   - `DurablePaymentRepository`: Provides transactional CRUD operations for attempts, nonce lookups, active task reservation sums, and pending reconciliation retrieval.
-- Integrated durable storage into [`backend/payments/idempotency.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/idempotency.py) (recovers cached responses and rejects nonces across clean process instances).
-- Integrated durable storage into [`backend/payments/budget.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/budget.py) (persists reservations and prevents concurrent overdraws).
+- Integrated durable storage into [`backend/payments/idempotency.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/idempotency.py) and [`backend/payments/budget.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/budget.py).
 - Updated [`backend/payments/service.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/service.py) to hydrate pending reconciliations from durable storage on restart.
 - Authored [`backend/tests/test_durable_persistence.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_durable_persistence.py) with 6 comprehensive restart and concurrency tests.
-- Executed full automated test suite: **65 of 65 tests passed in 1.32s (100% pass rate)**.
-- Verified clean working tree with `git diff --check` (0 whitespace errors).
 
-### Step 15: Phase 2 Independent Security Audit & Stage D Readiness Gate
-- Conducted exhaustive security audit across Audit 1 (x402 protocol/signing), Audit 2 (settlement security), Audit 3 (persistence/data safety), Audit 4 (reproducible test evidence), and Audit 5 (Stage D readiness).
-- Eliminated signature slicing fake `tx_hash` synthesis in [`backend/payments/settlement.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/settlement.py) (`SellerPaymentVerifier.verify_and_settle` now returns `tx_hash=None` and `facilitator_receipt_id=f"rec_auth_{sig_id}"`).
-- Enhanced [`backend/payments/service.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/service.py): In live mode, unverified or missing settlement evidence immediately halts and transitions attempt to `PENDING_RECONCILIATION` (`error_code="SETTLEMENT_UNVERIFIED"`), guaranteeing unverified calls never result in `PAID`.
-- Added 2 new negative security tests in [`backend/tests/test_settlement_verification.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_settlement_verification.py):
-  1. `test_full_settlement_rejection_on_wrong_payer`: Asserts rejection if on-chain ERC-20 transfer sender does not match expected buyer.
-  2. `test_payment_service_live_mode_unverified_proof_transitions_to_suspense`: Asserts live mode halts with `PENDING_RECONCILIATION` when proof cannot be verified.
-- Re-executed full automated test suite: **67 of 67 tests passed in 1.89s (100% pass rate)**.
-- `git diff --check` passed cleanly with 0 whitespace errors.
+#### M1 - Step 15: Phase 2 Independent Security Audit & Stage D Readiness Gate
+- Conducted exhaustive security audit across protocol/signing, settlement security, persistence/data safety, and Stage D readiness.
+- Eliminated signature slicing fake `tx_hash` synthesis in [`backend/payments/settlement.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/settlement.py) (`SellerPaymentVerifier.verify_and_settle` returns `tx_hash=None` and `facilitator_receipt_id=f"rec_auth_{sig_id}"`).
+- Enhanced [`backend/payments/service.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/service.py): In live mode, unverified or missing settlement evidence immediately halts and transitions attempt to `PENDING_RECONCILIATION` (`error_code="SETTLEMENT_UNVERIFIED"`).
+- Added 2 negative security tests in [`backend/tests/test_settlement_verification.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_settlement_verification.py).
 
 ### Step 16: Phase 2 Stage D — Buyer/Seller End-to-End Integration
 - Integrated autonomous buyer workflow in [`backend/buyer/buyer_agent.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/buyer/buyer_agent.py) to execute via `payment_service.execute_paid_call()` with constructor dependency injection and durable idempotency keys (`f"idemp_{task_id}_{step.step_number}_{service.service_id}"`).
@@ -323,39 +311,30 @@
 - Test Suite Execution: **80 of 80 tests passed in 2.18s (100% pass rate)**.
 - `git diff --check` passed cleanly with 0 whitespace errors.
 
+---
+
 ### Step 17: Member 2 — Step 5A Independent Seller Testing (While M1 Implements x402)
 - Operating on branch `M2`.
 - Audited seller foundation across `backend/sellers/common.py`, `dependencies.py`, `routes.py`, `schemas.py`, `data_seller.py`, `scraping_seller.py`, and `inference_seller.py`.
 - Corrected two critical safety defects in seller route handling (`backend/sellers/routes.py`):
-  1. *Fail-closed on None receipt*: If a payment verifier returns `None` instead of raising or returning a `SettlementReceipt`, the route fails closed with HTTP 402 `PAYMENT_AUTHORIZATION_FAILED` rather than executing seller logic.
-  2. *Exception sanitization*: Updated `_handle_seller_exception` to sanitize `SellerExecutionError` responses with `"Internal execution error occurred within seller logic."`, preventing internal secrets, DB credentials, or sensitive exception strings from leaking to clients.
-- Expanded automated test coverage in `backend/tests/test_sellers.py` and `backend/tests/test_sellers_foundation.py`:
-  - Verified `BaseSellerService` inheritance, canonical IDs (`data_001`, `scraping_001`, `inference_001`), and input/output Pydantic schemas.
-  - Verified invalid output rejection across concrete seller services (`SellerOutputValidationError`).
-  - Verified execution metrics population (`duration_ms`, `success`, `output_validated`, `request_id`, `service_id`).
-  - Verified async timeout cancellation (`asyncio.wait_for` cancelling cooperative coroutines).
-  - Verified FastAPI dependency overrides across all three seller services.
-  - Verified mock-based payment boundary safety: verified seller business logic is NEVER executed on missing, malformed, unverified, crashing, or None-receipt payment states.
-- Verified test suite: **64 of 64 tests passed (100% pass rate)**.
-- Verified zero payment files modified (`backend/payments/` untouched).
+  1. *Fail-closed on None receipt*: If a payment verifier returns `None`, the route fails closed with HTTP 402 `PAYMENT_AUTHORIZATION_FAILED`.
+  2. *Exception sanitization*: Updated `_handle_seller_exception` to sanitize `SellerExecutionError` responses with `"Internal execution error occurred within seller logic."`.
+- Expanded automated test coverage in `backend/tests/test_sellers.py` and `backend/tests/test_sellers_foundation.py`.
+
+---
 
 ### Step 18: Member 2 — Phase 1 Completion & Stage D Seller-Payment Integration
 - Operating on branch `M2` (tracking seller subsystem ownership).
-- **Repository & Payment Contract Audit:**
-  - Audited `origin/M1` (commit `f1fc38f`). Discovered that Member 1 implemented `SellerPaymentVerifier` in `backend/payments/settlement.py`, but the reported helper functions `verify_seller_payment` and `get_seller_payment_verifier` in `backend/payments/dependencies.py` were not implemented on any branch.
-  - In strict compliance with Rule C (respecting `backend/payments/` ownership) and Rule E (no automatic force-merging of `origin/M1`), preserved existing clean dependency injection via `SellerPaymentVerifierInterface` while providing forward-compatible hook for `verify_seller_payment`.
-- **Phase 1 Seller Foundation Hardening:**
-  - Hardened `ScrapingSellerInput` (`backend/sellers/schemas.py`) with strict URL validation and pre-execution SSRF protection: blocking loopback (`127.0.0.1`, `::1`), private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), cloud metadata (`169.254.169.254`, `metadata.google.internal`), and non-HTTP schemes.
-  - Bounded `ScrapingSellerService` content length to 50,000 characters.
-  - Hardened `InferenceSellerInput` with whitespace stripping, max length bounds (10,000 chars), and token bounding (`max_tokens <= 2000`).
-  - Hardened `DataSellerInput` with whitespace stripping and alphanumeric ticker validation.
-- **Stage D Seller-Payment Integration (`backend/sellers/routes.py`):**
-  - Updated `_verify_and_execute_seller` to handle empty or whitespace-only payment headers as unprovided (issuing standard 402 challenge).
-  - Enforced strict fail-closed verification: rejecting unconfirmed/empty settlement proofs, verifying that `receipt.tx_hash` or `receipt.facilitator_receipt_id` exists before executing seller logic.
-  - Strictly enforced Zero Fabrication Rule: eliminated synthetic receipt generation; only authentic verifier-produced proof is attached to responses.
-  - Supported dynamic injection of `verify_seller_payment` if implemented in `backend.payments`, while safely defaulting to `SellerPaymentVerifierInterface`.
-- **Comprehensive Test Suite & Verification:**
-  - Created `backend/tests/test_sellers_payment_integration.py` with 17 dedicated tests covering challenges, fail-closed boundaries, SSRF blocks, input bounds, verbatim proof attachment, context/idempotency forwarding, terms mismatches, and full buyer-seller-ledger handshake.
-  - Ran full test suite via `python scripts/run_tests.py`: **81 of 81 tests passed (100% pass rate)**.
-  - Verified zero modifications to payment-owned files (`backend/payments/`).
+- Enforced strict fail-closed verification: rejecting unconfirmed/empty settlement proofs, verifying that `receipt.tx_hash` or `receipt.facilitator_receipt_id` exists before executing seller logic.
+- Strictly enforced Zero Fabrication Rule: eliminated synthetic receipt generation; only authentic verifier-produced proof is attached to responses.
+- Hardened `ScrapingSellerInput` with SSRF protection, `InferenceSellerInput` with whitespace stripping and token bounding, and `DataSellerInput` with ticker validation.
+- Created `backend/tests/test_sellers_payment_integration.py` with 17 dedicated tests covering challenges, fail-closed boundaries, SSRF blocks, input bounds, verbatim proof attachment, and full buyer-seller handshake.
+
+---
+
+### Step 19: Member 2 — Phase 2 Provider Architecture & Advanced SSRF DNS Defense
+- Implemented modular provider architecture under `backend/sellers/providers/`:
+  - `inference/`: `ConfiguredProvider` and `fake.py` supporting Gemini and Groq LLMs with timeout bounding and fallback.
+  - `scraping/`: `fetcher.py`, `parser.py`, `safety.py`, and `transport.py` featuring DNS-rebinding protection and pre-execution safety validation.
+- Authored comprehensive test suite in `backend/tests/test_sellers_providers.py`.
 

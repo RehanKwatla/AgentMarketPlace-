@@ -388,7 +388,10 @@ class SettlementVerifier:
 class SellerPaymentVerifier(SellerPaymentVerifierInterface):
     """Concrete implementation of SellerPaymentVerifierInterface for Member 2 seller microservices."""
 
-    def __init__(self, settlement_verifier: Optional[SettlementVerifier] = None, test_mode: bool = False):
+    def __init__(self, settlement_verifier: Optional[SettlementVerifier] = None, test_mode: Optional[bool] = None):
+        settings = get_settings()
+        if test_mode is None:
+            test_mode = settings.environment in ("development", "test", "testing")
         self.verifier = settlement_verifier or SettlementVerifier(test_mode=test_mode)
         self.test_mode = test_mode
 
