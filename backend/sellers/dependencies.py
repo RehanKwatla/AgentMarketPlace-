@@ -69,9 +69,10 @@ def get_seller_execution_context(
         service_id = "unknown_seller"
 
     client_ip = request.client.host if request.client else None
+    cleaned_idempotency_key = idempotency_key if isinstance(idempotency_key, str) else None
 
     return SellerExecutionContext(
         service_id=service_id,
-        idempotency_key=idempotency_key,
+        idempotency_key=cleaned_idempotency_key,
         client_ip=client_ip,
     )

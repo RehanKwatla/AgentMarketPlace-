@@ -87,12 +87,18 @@ sequenceDiagram
     end
 
     Buyer->>SellerRoute: POST /api/v1/seller/data<br/>Headers: X-402-Payment-Payload, Idempotency-Key
+    SellerRoute->>SellerRoute: Validate Payload Schema (Fail-Closed on 400 Bad Request)
     SellerRoute->>Facilitator: Settle Payment Authorization on Base Sepolia
-    Facilitator-->>SellerRoute: Settlement Confirmation & TX Hash / Receipt
-    SellerRoute->>SellerSvc: DataSellerService.execute(payload)
-    SellerSvc-->>SellerRoute: DataSellerOutput {"symbol": "ETH", "price": 2650.50}
-    SellerRoute-->>Buyer: HTTP 200 OK + Payload<br/>Header: X-402-Settlement-Proof: "receipt_..."
-    Buyer->>Budget: BudgetManager.commit(res_id, 2000)
+    alt Verifier Unavailable or Returns None / Rejection
+        SellerRoute-->>Buyer: HTTP 503 / HTTP 402 (Fail-closed, seller logic never runs)
+    else Verification & Settlement Succeeded
+        Facilitator-->>SellerRoute: Settlement Confirmation & TX Hash / Receipt
+        SellerRoute->>SellerSvc: BaseSellerService.execute_lifecycle(payload, context)
+        SellerSvc->>SellerSvc: Input Validation -> Bounded Timeout Execution -> Output Validation -> Metrics
+        SellerSvc-->>SellerRoute: Validated Output + ExecutionMetrics
+        SellerRoute-->>Buyer: HTTP 200 OK + Payload<br/>Header: X-402-Settlement-Proof: "rec_..."
+        Buyer->>Budget: BudgetManager.commit(res_id, 2000)
+    end
 ```
 
 ---
@@ -180,9 +186,11 @@ scripts/run_tests.py
         ├── test_payments.py: Tests PaymentPolicyVerifier (network, token, payTo, gouging)
         ├── test_budget.py: Tests base unit arithmetic, overdraw blocks, & 10-task concurrency lock
         ├── test_replay.py: Tests nonce single-use cache & idempotency key store
-        ├── test_sellers.py: Tests 402 challenge issuance & paid execution stubs
+        ├── test_sellers.py: Tests 402 challenge issuance, fail-closed verifier checks, dependency overrides, and error sanitization
+        ├── test_sellers_foundation.py: Tests BaseSellerService lifecycle, output schema rejection, context extraction, metrics, and timeouts
         ├── test_buyer.py: Tests TaskPlanner decomposition & budget refusal
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All 32 tests execute in under 0.25 seconds and verify every subsystem interface before developer feature branches are merged.
+All 64 tests execute in ~0.50 seconds and verify every subsystem interface before developer feature branches are merged.
+

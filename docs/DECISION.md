@@ -151,3 +151,21 @@ Frontend single-page applications (SPAs) bundle JavaScript that is readable by a
 ### 3. How It Works
 - `frontend/src/api/client.ts` calls backend routes.
 - No cryptographic libraries or private keys are present in `frontend/package.json`.
+
+---
+
+## Decision 9: Fail-Closed Verifier Receipt Verification & Public Error Sanitization
+
+### 1. Context & Problem
+In an open payment-gated microservice environment, two edge failure modes exist:
+1. A payment verifier might return a falsy/`None` result instead of raising an exception, which if unchecked would allow unauthenticated execution of seller business logic.
+2. An unexpected seller crash (e.g., database connection failure, downstream API crash) might leak database passwords, internal URLs, or credentials if raw exception strings are returned to external clients.
+
+### 2. Theory & Logic
+- **Fail-Closed Security Posture:** Any ambiguous or empty payment verification outcome MUST be treated as an explicit authorization denial (`HTTP 402 Payment Required`). Business logic must never execute without concrete settlement receipt evidence.
+- **Defensive Error Sanitization:** Internal exceptions (`SellerExecutionError`) must log full diagnostic stack traces server-side while emitting sanitized, opaque error messages to clients to prevent secret leakage.
+
+### 3. How It Works
+- `backend/sellers/routes.py` checks `if receipt is None:` immediately after calling `verifier.verify_and_settle()`, failing closed with HTTP 402 and `PAYMENT_AUTHORIZATION_FAILED`.
+- `_handle_seller_exception` maps `SellerExecutionError` to HTTP 500 with a static sanitized message (`"Internal execution error occurred within seller logic."`), verified by `test_seller_route_internal_exception_sanitization`.
+

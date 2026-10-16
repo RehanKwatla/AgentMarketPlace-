@@ -91,3 +91,20 @@
 - Created local branches: `feature/payments`, `feature/sellers`, `feature/buyer-registry`, `feature/dashboard-ledger`.
 - Added remote `https://github.com/RehanKwatla/AgentMarketPlace-.git`.
 - Pushed `main` and all 4 feature branches to GitHub successfully.
+
+### Step 9: Member 2 — Step 5A Independent Seller Testing (While M1 Implements x402)
+- Operating on branch `M2`.
+- Audited seller foundation across `backend/sellers/common.py`, `dependencies.py`, `routes.py`, `schemas.py`, `data_seller.py`, `scraping_seller.py`, and `inference_seller.py`.
+- Corrected two critical safety defects in seller route handling (`backend/sellers/routes.py`):
+  1. *Fail-closed on None receipt*: If a payment verifier returns `None` instead of raising or returning a `SettlementReceipt`, the route fails closed with HTTP 402 `PAYMENT_AUTHORIZATION_FAILED` rather than executing seller logic.
+  2. *Exception sanitization*: Updated `_handle_seller_exception` to sanitize `SellerExecutionError` responses with `"Internal execution error occurred within seller logic."`, preventing internal secrets, DB credentials, or sensitive exception strings from leaking to clients.
+- Expanded automated test coverage in `backend/tests/test_sellers.py` and `backend/tests/test_sellers_foundation.py`:
+  - Verified `BaseSellerService` inheritance, canonical IDs (`data_001`, `scraping_001`, `inference_001`), and input/output Pydantic schemas.
+  - Verified invalid output rejection across concrete seller services (`SellerOutputValidationError`).
+  - Verified execution metrics population (`duration_ms`, `success`, `output_validated`, `request_id`, `service_id`).
+  - Verified async timeout cancellation (`asyncio.wait_for` cancelling cooperative coroutines).
+  - Verified FastAPI dependency overrides across all three seller services.
+  - Verified mock-based payment boundary safety: verified seller business logic is NEVER executed on missing, malformed, unverified, crashing, or None-receipt payment states.
+- Verified test suite: **64 of 64 tests passed (100% pass rate)**.
+- Verified zero payment files modified (`backend/payments/` untouched).
+

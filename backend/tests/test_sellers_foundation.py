@@ -270,5 +270,196 @@ async def test_inference_seller_inheritance_and_lifecycle():
     out, metrics = await service.execute_lifecycle({"prompt": "Summarize market state", "max_tokens": 100})
     assert "Analytical Synthesis" in out.response
     assert metrics.success is True
+    assert metrics.service_id == "inference_001"
+    assert metrics.output_validated is True
+    assert metrics.duration_ms > 0
+
+
+@pytest.mark.asyncio
+async def test_seller_input_validation_rejection_all_sellers():
+    """Verify all three sellers reject invalid inputs and raise SellerInputValidationError."""
+    from backend.sellers.data_seller import DataSellerService
+    from backend.sellers.scraping_seller import ScrapingSellerService
+    from backend.sellers.inference_seller import InferenceSellerService
+
+    data_svc = DataSellerService()
+    # Symbol exceeds 10 chars
+    with pytest.raises(SellerInputValidationError):
+        await data_svc.execute_lifecycle({"symbol": "TOOLONGSYMBOL"})
+
+    # Symbol empty
+    with pytest.raises(SellerInputValidationError):
+        await data_svc.execute_lifecycle({"symbol": ""})
+
+    scraping_svc = ScrapingSellerService()
+    # Missing required url
+    with pytest.raises(SellerInputValidationError):
+        await scraping_svc.execute_lifecycle({})
+
+    inference_svc = InferenceSellerService()
+    # Prompt empty and max_tokens out of bounds (<10)
+    with pytest.raises(SellerInputValidationError):
+        await inference_svc.execute_lifecycle({"prompt": "", "max_tokens": 5})
+
+    # max_tokens > 2000
+    with pytest.raises(SellerInputValidationError):
+        await inference_svc.execute_lifecycle({"prompt": "test", "max_tokens": 5000})
+
+
+def test_seller_context_extractor_comprehensive():
+    """Verify context extractor handles various route paths, headers, and client states."""
+    from unittest.mock import MagicMock
+    from backend.sellers.dependencies import get_seller_execution_context
+
+    # 1. Scraping path
+    req_scraping = MagicMock()
+    req_scraping.url.path = "/api/v1/seller/scraping"
+    req_scraping.client.host = "10.0.0.1"
+    ctx_scraping = get_seller_execution_context(req_scraping, idempotency_key="scraping_key")
+    assert ctx_scraping.service_id == "scraping_001"
+    assert ctx_scraping.idempotency_key == "scraping_key"
+    assert ctx_scraping.client_ip == "10.0.0.1"
+
+    # 2. Inference path
+    req_inf = MagicMock()
+    req_inf.url.path = "/api/v1/seller/inference"
+    req_inf.client.host = "10.0.0.2"
+    ctx_inf = get_seller_execution_context(req_inf, idempotency_key=None)
+    assert ctx_inf.service_id == "inference_001"
+    assert ctx_inf.idempotency_key is None
+    assert ctx_inf.client_ip == "10.0.0.2"
+
+    # 3. Unknown path
+    req_unknown = MagicMock()
+    req_unknown.url.path = "/api/v1/other/service"
+    req_unknown.client = None
+    ctx_unknown = get_seller_execution_context(req_unknown)
+    assert ctx_unknown.service_id == "unknown_seller"
+    assert ctx_unknown.client_ip is None
+
+
+def test_seller_modules_no_circular_imports():
+    """Verify all seller modules can be imported cleanly without circular dependency errors."""
+    import importlib
+    modules = [
+        "backend.sellers.common",
+        "backend.sellers.schemas",
+        "backend.sellers.data_seller",
+        "backend.sellers.scraping_seller",
+        "backend.sellers.inference_seller",
+        "backend.sellers.dependencies",
+        "backend.sellers.routes",
+    ]
+    for mod_name in modules:
+        mod = importlib.import_module(mod_name)
+        assert mod is not None
+
+
+@pytest.mark.asyncio
+async def test_concrete_sellers_reject_invalid_output():
+    """Verify concrete seller services enforce output schema validation and reject malformed outputs."""
+    from backend.sellers.data_seller import DataSellerService
+    from backend.sellers.scraping_seller import ScrapingSellerService
+    from backend.sellers.inference_seller import InferenceSellerService
+
+    # 1. Scraping seller subclass returning incomplete output
+    class BadScrapingService(ScrapingSellerService):
+        async def _execute_business_logic(self, payload, context):
+            return {"url": str(payload.url)}  # missing title, content, word_count
+
+    bad_scraping = BadScrapingService()
+    with pytest.raises(SellerOutputValidationError) as exc_info:
+        await bad_scraping.execute_lifecycle({"url": "https://example.com"})
+    assert exc_info.value.service_id == "scraping_001"
+    assert exc_info.value.error_code == "SELLER_OUTPUT_INVALID"
+
+    # 2. Inference seller subclass returning invalid types
+    class BadInferenceService(InferenceSellerService):
+        async def _execute_business_logic(self, payload, context):
+            return {"response": 12345}  # missing model_used and tokens_generated
+
+    bad_inf = BadInferenceService()
+    with pytest.raises(SellerOutputValidationError) as exc_info:
+        await bad_inf.execute_lifecycle({"prompt": "Hello", "max_tokens": 50})
+    assert exc_info.value.service_id == "inference_001"
+    assert exc_info.value.error_code == "SELLER_OUTPUT_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_seller_execution_metrics_comprehensive():
+    """Verify execution metrics are accurately populated across all 3 seller services."""
+    from backend.sellers.data_seller import DataSellerService
+    from backend.sellers.scraping_seller import ScrapingSellerService
+    from backend.sellers.inference_seller import InferenceSellerService
+
+    services = [
+        (DataSellerService(), {"symbol": "BTC"}, "data_001"),
+        (ScrapingSellerService(), {"url": "https://base.org"}, "scraping_001"),
+        (InferenceSellerService(), {"prompt": "Analyze risk", "max_tokens": 50}, "inference_001"),
+    ]
+
+    for service, payload, expected_id in services:
+        ctx = SellerExecutionContext(service_id=expected_id, idempotency_key=f"key_{expected_id}")
+        output, metrics = await service.execute_lifecycle(payload, context=ctx)
+        assert metrics.service_id == expected_id
+        assert metrics.request_id == ctx.request_id
+        assert metrics.success is True
+        assert metrics.timed_out is False
+        assert metrics.output_validated is True
+        assert metrics.duration_ms > 0
+        assert metrics.error_code is None
+
+
+@pytest.mark.asyncio
+async def test_async_timeout_cancellation_behavior():
+    """Verify asyncio.wait_for properly cancels cooperative coroutines exceeding timeout."""
+    from backend.sellers.data_seller import DataSellerService
+
+    task_was_cancelled = False
+
+    class CancellableSlowService(DataSellerService):
+        def __init__(self):
+            super().__init__()
+            self.default_timeout_seconds = 0.05
+
+        async def _execute_business_logic(self, payload, context):
+            nonlocal task_was_cancelled
+            try:
+                await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                task_was_cancelled = True
+                raise
+
+    svc = CancellableSlowService()
+    with pytest.raises(SellerExecutionTimeoutError) as exc_info:
+        await svc.execute_lifecycle({"symbol": "ETH"})
+
+    assert exc_info.value.service_id == "data_001"
+    assert exc_info.value.error_code == "SELLER_TIMEOUT"
+    # Proves that asyncio.wait_for() actually cancelled the underlying coroutine task
+    assert task_was_cancelled is True
+
+
+def test_seller_compatibility_with_registry_catalog():
+    """Verify canonical service IDs, prices, and categories match the seed catalog."""
+    from backend.registry.service_catalog import ServiceCatalog
+
+    catalog = ServiceCatalog()
+    all_services = catalog.list_services()
+    catalog_map = {s.service_id: s for s in all_services}
+
+    assert "data_001" in catalog_map
+    assert catalog_map["data_001"].price_base_units == 2000
+    assert catalog_map["data_001"].category.value == "data"
+
+    assert "scraping_001" in catalog_map
+    assert catalog_map["scraping_001"].price_base_units == 3000
+    assert catalog_map["scraping_001"].category.value == "scraping"
+
+    assert "inference_001" in catalog_map
+    assert catalog_map["inference_001"].price_base_units == 4000
+    assert catalog_map["inference_001"].category.value == "inference"
+
+
 
 
