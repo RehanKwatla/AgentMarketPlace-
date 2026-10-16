@@ -1,9 +1,10 @@
 """Seller Microservice Routes enforcing x402 v2 challenge flow, verification, and lifecycle execution."""
+import base64
 import json
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -43,6 +44,27 @@ from backend.sellers.dependencies import (
     get_inference_seller_service,
     get_seller_execution_context,
 )
+
+# Import official x402 schemas and HTTP utilities if available
+try:
+    from x402.schemas import (
+        PaymentRequired as OfficialPaymentRequired,
+        PaymentRequirements as OfficialPaymentRequirements,
+        SettleResponse as OfficialSettleResponse,
+    )
+    from x402 import http as x402_http
+except ImportError:
+    OfficialPaymentRequired = None
+    OfficialPaymentRequirements = None
+    OfficialSettleResponse = None
+    x402_http = None
+
+# Official HTTP Header constants
+HEADER_PAYMENT_REQUIRED = "PAYMENT-REQUIRED"
+HEADER_PAYMENT_SIGNATURE = "PAYMENT-SIGNATURE"
+HEADER_PAYMENT_RESPONSE = "PAYMENT-RESPONSE"
+HEADER_X_PAYMENT = "X-PAYMENT"
+HEADER_X_PAYMENT_RESPONSE = "X-PAYMENT-RESPONSE"
 
 # Try importing Member 1's payment helper and verifier if available
 try:
@@ -93,8 +115,8 @@ def _build_402_challenge(
     pay_to: str,
     nonce: str,
 ) -> JSONResponse:
-    """Build compliant HTTP 402 Payment Required response with x402 v2 challenge."""
-    requirement = {
+    """Build compliant HTTP 402 Payment Required response with official and legacy x402 challenge."""
+    legacy_requirement = {
         "version": "2.0",
         "network": NETWORK_BASE_SEPOLIA,
         "token": USDC_BASE_SEPOLIA,
@@ -103,13 +125,62 @@ def _build_402_challenge(
         "nonce": nonce,
         "service_id": service_id,
     }
-    req_json = json.dumps(requirement)
+    legacy_json = json.dumps(legacy_requirement)
+
+    # Official x402 v2 challenge encoding
+    official_b64 = None
+    if OfficialPaymentRequired is not None and OfficialPaymentRequirements is not None and x402_http is not None:
+        try:
+            req_spec = OfficialPaymentRequirements(
+                scheme="exact",
+                network=NETWORK_BASE_SEPOLIA,
+                asset=USDC_BASE_SEPOLIA,
+                amount=str(amount_units),
+                pay_to=pay_to,
+                max_timeout_seconds=60,
+                extra={
+                    "nonce": nonce,
+                    "service_id": service_id,
+                },
+            )
+            ch = OfficialPaymentRequired(
+                x402_version=2,
+                accepts=[req_spec],
+            )
+            official_b64 = x402_http.encode_payment_required_header(ch)
+        except Exception as enc_err:
+            logger.warning("Failed to encode official PaymentRequired challenge: %s", enc_err)
+
+    if not official_b64:
+        # Fallback to standard base64 of the requirements dictionary
+        fallback_dict = {
+            "x402Version": 2,
+            "accepts": [{
+                "scheme": "exact",
+                "network": NETWORK_BASE_SEPOLIA,
+                "asset": USDC_BASE_SEPOLIA,
+                "amount": str(amount_units),
+                "payTo": pay_to,
+                "maxTimeoutSeconds": 60,
+                "extra": {"nonce": nonce, "service_id": service_id},
+            }],
+        }
+        official_b64 = base64.b64encode(json.dumps(fallback_dict).encode("utf-8")).decode("utf-8")
+
+    expose_headers = (
+        f"{HEADER_PAYMENT_REQUIRED}, {HEADER_PAYMENT_RESPONSE}, "
+        f"{HEADER_X_PAYMENT}, {HEADER_X_PAYMENT_RESPONSE}, "
+        f"{HEADER_X402_REQUIREMENT}, {HEADER_X402_SETTLEMENT_PROOF}"
+    )
+
     return JSONResponse(
         status_code=status.HTTP_402_PAYMENT_REQUIRED,
         content={"detail": "Payment Required via x402 v2 protocol."},
         headers={
-            HEADER_X402_REQUIREMENT: req_json,
-            "Access-Control-Expose-Headers": f"{HEADER_X402_REQUIREMENT}, {HEADER_X402_SETTLEMENT_PROOF}",
+            HEADER_X402_REQUIREMENT: legacy_json,
+            HEADER_PAYMENT_REQUIRED: official_b64,
+            HEADER_X_PAYMENT: official_b64,
+            "Access-Control-Expose-Headers": expose_headers,
         },
     )
 
@@ -180,12 +251,122 @@ def _handle_seller_exception(exc: Exception, service_id: str, request_id: str) -
         )
 
 
+def _extract_and_decode_payment_payload(
+    payment_signature: Optional[str] = None,
+    x_payment: Optional[str] = None,
+    x_402_payment_payload: Optional[str] = None,
+) -> Tuple[Optional[PaymentPayload], Optional[str]]:
+    """Extract and decode payment payload from official or legacy x402 headers.
+
+    Priority order:
+    1. PAYMENT-SIGNATURE (official v2 standard)
+    2. X-PAYMENT (official v2 alternative)
+    3. X-402-Payment-Payload (project internal legacy)
+
+    Returns:
+        (PaymentPayload, raw_header_str)
+        If no header was provided or all are empty: returns (None, None).
+        If a header was provided but cannot be decoded or validated: raises ValueError.
+    """
+    raw_header = None
+    is_official_header = False
+
+    if payment_signature is not None and payment_signature.strip():
+        raw_header = payment_signature.strip()
+        is_official_header = True
+    elif x_payment is not None and x_payment.strip():
+        raw_header = x_payment.strip()
+        is_official_header = True
+    elif x_402_payment_payload is not None and x_402_payment_payload.strip():
+        raw_header = x_402_payment_payload.strip()
+        is_official_header = False
+
+    if not raw_header:
+        return None, None
+
+    # Step A: If official header or looks like base64, try official SDK decoder
+    if is_official_header:
+        if x402_http is not None:
+            try:
+                official_obj = x402_http.decode_payment_signature_header(raw_header)
+                if hasattr(official_obj, "payload") and isinstance(official_obj.payload, dict):
+                    inner = official_obj.payload
+                    auth = inner.get("authorization", {})
+                    sig = inner.get("signature", "")
+                    buyer = (
+                        inner.get("buyer_address")
+                        or auth.get("buyer_address")
+                        or auth.get("from")
+                        or "0x0000000000000000000000000000000000000000"
+                    )
+                    return PaymentPayload(
+                        authorization=auth,
+                        signature=sig,
+                        buyer_address=buyer,
+                    ), raw_header
+            except Exception:
+                # Could be plain JSON passed in official header; fall through to JSON attempt
+                pass
+
+    # Step B: Try JSON decoding (e.g. legacy X-402-Payment-Payload or unencoded JSON payload)
+    try:
+        parsed = json.loads(raw_header)
+        if isinstance(parsed, dict):
+            # Check if it has an official outer wrapper: {"payload": {"authorization": ..., "signature": ...}}
+            if "payload" in parsed and isinstance(parsed["payload"], dict):
+                inner = parsed["payload"]
+                auth = inner.get("authorization", {})
+                sig = inner.get("signature", "")
+                buyer = (
+                    inner.get("buyer_address")
+                    or auth.get("buyer_address")
+                    or auth.get("from")
+                    or "0x0000000000000000000000000000000000000000"
+                )
+                return PaymentPayload(
+                    authorization=auth,
+                    signature=sig,
+                    buyer_address=buyer,
+                ), raw_header
+            # Direct application PaymentPayload
+            return PaymentPayload.model_validate(parsed), raw_header
+    except (json.JSONDecodeError, ValidationError):
+        pass
+
+    # Step C: If not official header, but might be base64-encoded payload
+    if not is_official_header and x402_http is not None:
+        try:
+            official_obj = x402_http.decode_payment_signature_header(raw_header)
+            if hasattr(official_obj, "payload") and isinstance(official_obj.payload, dict):
+                inner = official_obj.payload
+                auth = inner.get("authorization", {})
+                sig = inner.get("signature", "")
+                buyer = (
+                    inner.get("buyer_address")
+                    or auth.get("buyer_address")
+                    or auth.get("from")
+                    or "0x0000000000000000000000000000000000000000"
+                )
+                return PaymentPayload(
+                    authorization=auth,
+                    signature=sig,
+                    buyer_address=buyer,
+                ), raw_header
+        except Exception:
+            pass
+
+    # If all parsing attempts fail on a non-empty header -> invalid
+    raise ValueError("Payment payload header is invalid, malformed, or unparseable.")
+
+
 async def _verify_and_execute_seller(
     service_id: str,
     amount_units: int,
     pay_to: str,
     payload: any,
-    raw_payment_payload: Optional[str],
+    payment_signature: Optional[str],
+    x_payment: Optional[str],
+    x_402_payment_payload: Optional[str],
     context: SellerExecutionContext,
     service: any,
     verifier: Optional[SellerPaymentVerifierInterface],
@@ -193,30 +374,26 @@ async def _verify_and_execute_seller(
     """Standardized seller execution handler with fail-closed payment authorization.
     
     Safety Invariants:
-    1. If no payment payload or empty string -> Return HTTP 402 challenge.
+    1. If no payment payload or empty string -> Return HTTP 402 challenge with official & legacy headers.
     2. If payment payload provided:
-       - Validate JSON & PaymentPayload schema.
+       - Validate & decode via official base64 or legacy JSON schema.
+       - If malformed -> Return HTTP 400 Bad Request (PAYMENT_PAYLOAD_INVALID).
        - If no verifier available -> Fail closed (HTTP 503 Service Unavailable).
        - If verifier available -> Invoke payment verification.
        - Only execute seller business logic AFTER verified, genuine settlement proof.
-       - Only attach X-402-Settlement-Proof if actual settlement receipt/tx_hash is returned.
-       - Never fabricate fake receipts (e.g. receipt_<random_uuid>).
+       - Attach both X-402-Settlement-Proof and official PAYMENT-RESPONSE / X-PAYMENT-RESPONSE headers.
+       - Never fabricate fake receipts.
     """
-    # 1. Challenge with HTTP 402 if payment payload is missing or empty
     nonce = f"nonce_{context.request_id[:16]}"
-    if not raw_payment_payload or not raw_payment_payload.strip():
-        return _build_402_challenge(
-            service_id=service_id,
-            amount_units=amount_units,
-            pay_to=pay_to,
-            nonce=nonce,
-        )
 
-    # 2. Validate Payment Payload Structure (Fail-closed on malformed JSON / schema)
+    # 1. Extract and decode payment payload header
     try:
-        parsed_json = json.loads(raw_payment_payload)
-        payment_payload = PaymentPayload.model_validate(parsed_json)
-    except (json.JSONDecodeError, ValidationError) as val_err:
+        payment_payload, raw_header = _extract_and_decode_payment_payload(
+            payment_signature=payment_signature,
+            x_payment=x_payment,
+            x_402_payment_payload=x_402_payment_payload,
+        )
+    except ValueError as val_err:
         logger.warning(
             "Rejected malformed payment payload for service %s (req=%s): %s",
             service_id, context.request_id, val_err
@@ -225,10 +402,19 @@ async def _verify_and_execute_seller(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
                 "error_code": "PAYMENT_PAYLOAD_INVALID",
-                "message": "The provided X-402-Payment-Payload header is invalid or malformed.",
+                "message": "The provided payment payload header is invalid or malformed.",
                 "service_id": service_id,
                 "request_id": context.request_id,
             },
+        )
+
+    # 2. Challenge with HTTP 402 if payment payload is missing or empty
+    if payment_payload is None:
+        return _build_402_challenge(
+            service_id=service_id,
+            amount_units=amount_units,
+            pay_to=pay_to,
+            nonce=nonce,
         )
 
     # 3. Verify Payment
@@ -239,7 +425,7 @@ async def _verify_and_execute_seller(
                 service_id=service_id,
                 amount_units=amount_units,
                 pay_to=pay_to,
-                payment_payload_header=raw_payment_payload,
+                payment_payload_header=raw_header,
                 verifier=verifier,
             )
             if not verified_evidence or not isinstance(verified_evidence, str) or not verified_evidence.strip():
@@ -373,17 +559,47 @@ async def _verify_and_execute_seller(
     except Exception as exc:
         return _handle_seller_exception(exc, service_id=service_id, request_id=context.request_id)
 
-    # 5. Formulate Success Response with Verified Settlement Evidence
+    # 5. Formulate Success Response with Verified Settlement Evidence (Dual-Header)
     response = JSONResponse(
         status_code=status.HTTP_200_OK,
         content=output.model_dump(),
     )
 
     if settlement_proof:
+        # Legacy header
         response.headers[HEADER_X402_SETTLEMENT_PROOF] = settlement_proof
 
-    return response
+        # Official x402 v2 settlement proof headers (base64 encoded SettleResponse)
+        try:
+            if OfficialSettleResponse is not None and x402_http is not None:
+                settle_obj = OfficialSettleResponse(
+                    success=True,
+                    transaction=settlement_proof,
+                    network=NETWORK_BASE_SEPOLIA,
+                    amount=str(amount_units),
+                )
+                encoded_settle = x402_http.encode_payment_response_header(settle_obj)
+            else:
+                settle_dict = {
+                    "success": True,
+                    "transaction": settlement_proof,
+                    "network": NETWORK_BASE_SEPOLIA,
+                    "amount": str(amount_units),
+                }
+                encoded_settle = base64.b64encode(json.dumps(settle_dict).encode("utf-8")).decode("utf-8")
 
+            response.headers[HEADER_PAYMENT_RESPONSE] = encoded_settle
+            response.headers[HEADER_X_PAYMENT_RESPONSE] = encoded_settle
+        except Exception as enc_err:
+            logger.warning("Failed to encode official PAYMENT-RESPONSE header: %s", enc_err)
+
+        response.headers["Access-Control-Expose-Headers"] = (
+            f"{HEADER_PAYMENT_REQUIRED}, {HEADER_PAYMENT_RESPONSE}, "
+            f"{HEADER_X_PAYMENT}, {HEADER_X_PAYMENT_RESPONSE}, "
+            f"{HEADER_X402_REQUIREMENT}, {HEADER_X402_SETTLEMENT_PROOF}"
+        )
+
+    return response
 
 
 @router.post(
@@ -393,6 +609,8 @@ async def _verify_and_execute_seller(
 )
 async def handle_data_service(
     payload: DataSellerInput,
+    payment_signature: Optional[str] = Header(None, alias=HEADER_PAYMENT_SIGNATURE),
+    x_payment: Optional[str] = Header(None, alias=HEADER_X_PAYMENT),
     x_402_payment_payload: Optional[str] = Header(None, alias=HEADER_X402_PAYMENT_PAYLOAD),
     context: SellerExecutionContext = Depends(get_seller_execution_context),
     service: DataSellerService = Depends(get_data_seller_service),
@@ -404,7 +622,9 @@ async def handle_data_service(
         amount_units=2000,  # 0.002 USDC
         pay_to=settings.data_seller_pay_to,
         payload=payload,
-        raw_payment_payload=x_402_payment_payload,
+        payment_signature=payment_signature,
+        x_payment=x_payment,
+        x_402_payment_payload=x_402_payment_payload,
         context=context,
         service=service,
         verifier=verifier,
@@ -418,6 +638,8 @@ async def handle_data_service(
 )
 async def handle_scraping_service(
     payload: ScrapingSellerInput,
+    payment_signature: Optional[str] = Header(None, alias=HEADER_PAYMENT_SIGNATURE),
+    x_payment: Optional[str] = Header(None, alias=HEADER_X_PAYMENT),
     x_402_payment_payload: Optional[str] = Header(None, alias=HEADER_X402_PAYMENT_PAYLOAD),
     context: SellerExecutionContext = Depends(get_seller_execution_context),
     service: ScrapingSellerService = Depends(get_scraping_seller_service),
@@ -429,7 +651,9 @@ async def handle_scraping_service(
         amount_units=3000,  # 0.003 USDC
         pay_to=settings.scraping_seller_pay_to,
         payload=payload,
-        raw_payment_payload=x_402_payment_payload,
+        payment_signature=payment_signature,
+        x_payment=x_payment,
+        x_402_payment_payload=x_402_payment_payload,
         context=context,
         service=service,
         verifier=verifier,
@@ -443,6 +667,8 @@ async def handle_scraping_service(
 )
 async def handle_inference_service(
     payload: InferenceSellerInput,
+    payment_signature: Optional[str] = Header(None, alias=HEADER_PAYMENT_SIGNATURE),
+    x_payment: Optional[str] = Header(None, alias=HEADER_X_PAYMENT),
     x_402_payment_payload: Optional[str] = Header(None, alias=HEADER_X402_PAYMENT_PAYLOAD),
     context: SellerExecutionContext = Depends(get_seller_execution_context),
     service: InferenceSellerService = Depends(get_inference_seller_service),
@@ -454,7 +680,9 @@ async def handle_inference_service(
         amount_units=4000,  # 0.004 USDC
         pay_to=settings.inference_seller_pay_to,
         payload=payload,
-        raw_payment_payload=x_402_payment_payload,
+        payment_signature=payment_signature,
+        x_payment=x_payment,
+        x_402_payment_payload=x_402_payment_payload,
         context=context,
         service=service,
         verifier=verifier,
