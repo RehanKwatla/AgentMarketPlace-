@@ -201,8 +201,9 @@ scripts/run_tests.py
         ├── test_planner_validator.py: Tests DAG validation, cycle detection, and price tampering
         ├── test_buyer_orchestration_payment.py: Tests payment routing, budget lock, and pending reconciliation
         ├── test_buyer_dependency_execution.py: Tests sequential deps, parallel execution, timeouts, & fallbacks
+        ├── test_output_validation_provenance.py: Tests Draft-7 schema rejections, paid_output_rejected accounting, safe fallbacks, zero fact hallucination, and field-level provenance
         ├── test_member3.py: Tests canonical /api/v1/tasks lifecycle, query filters, output validation, & reputation
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All 78 tests execute in ~1.6 seconds and verify every subsystem interface before developer feature branches are merged.
+All 83 tests execute in ~1.6 seconds and verify every subsystem interface before developer feature branches are merged.

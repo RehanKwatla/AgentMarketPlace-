@@ -240,4 +240,19 @@ In complex agent workflows requiring Data (`data.lookup.v1`), Scraping (`scrapin
   - If the primary call failed with a clean non-payment error (`FAILED_AND_NOT_CHARGED`), the budget reservation is released, and the fallback's price is checked against `budget_mgr.available_budget`. If the fallback price exceeds available funds, it is rejected and not executed.
 - **Member 4 Audit Completeness:** All call records store explicit `step_id`, `depends_on`, `service_id`, `amount_paid`, and `tx_hash` synchronized with Member 4's `ledger_repo` and SQL `LedgerRecordModel`.
 
+---
+
+## Decision 13: Seller-Output Schema Validation, Transparent Aggregation, & Field-Level Provenance
+
+### 1. Context & Problem
+In a decentralized pay-per-call agent economy, sellers may return responses with invalid content types (e.g. `text/html` error pages), malformed JSON, missing required fields, or type mismatches. If the buyer agent naively aggregates these responses or hallucinates missing data, downstream users receive corrupt findings. Furthermore, when a micropayment has already settled on-chain (`tx_hash` or facilitator receipt verified) but the delivered output is invalid, the buyer cannot silently erase the cost or claim the call was free; nor can it report the failure as a successful finding.
+
+### 2. Theory & Logic
+- **Rigorous Draft-7 Schema Validation:** `OutputValidator` validates raw responses against the exact Draft-7 output JSON Schema registered for the seller version. Rejections explicitly check Content-Type headers (`application/json`), parse malformed JSON, verify top-level dictionaries, and detail missing required fields and type errors.
+- **Irrevocable Cost Accounting (`PAID_OUTPUT_REJECTED`):** When payment is verified by Member 1's `SettlementVerifier` but schema validation fails, the status is set to `CallStatus.PAID_OUTPUT_REJECTED` (matching Member 4's `LedgerStatus.PAID_OUTPUT_REJECTED`). The on-chain `tx_hash` and `amount_paid_usdc` are permanently preserved in the ledger and task record. The money was spent, and the seller's reputation score is penalized for non-compliance.
+- **Zero-Hallucination Result Aggregation:** `ResultAggregator` aggregates ONLY validated outputs from `CallStatus.SUCCEEDED` calls into `market_data`, `web_sources`, and `summary`. Rejected outputs are quarantined in `rejected_outputs`, while execution failures and unverified payments are quarantined in `failed_calls`. Under no circumstances are synthetic facts invented to replace missing data.
+- **Deterministic Field-Level & Result-Level Provenance:** Every aggregated finding in `market_data` and `summary` is explicitly linked in a `provenance` record specifying: `target_field`, `service_id`, `call_id`, `step_id`, `category`, `schema_version`, `timestamp`, `payment_reference`, and `validation_status: "valid"`.
+- **Transparent Execution Disclosures:** When outputs are rejected or calls fail, transparent disclosure notices are appended to the user-facing summary detailing the producing service ID and schema error reason.
+
+
 

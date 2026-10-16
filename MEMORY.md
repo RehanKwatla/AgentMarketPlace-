@@ -172,6 +172,28 @@
 - Created end-to-end integration demo in `scripts/demo_m3_orchestration.py` showing Data, Scraping, and Inference executed with clearly labeled service environments.
 - Ran full test suite across all subsystems: **78 of 78 tests passed (100% pass rate in 1.60s)**.
 
+### Step 13: Seller-Output Validation, Safe Fallbacks, Result Aggregation, & Provenance Tracking
+- Enhanced `backend/buyer/schemas.py`:
+  - Extended `ServiceCallRecord` with `payment_reference`, `schema_version`, `validation_details`, `source_metadata`, and `completed_at`.
+- Enhanced `backend/buyer/output_validator.py`:
+  - Enforced strict Content-Type checks (`application/json`), malformed JSON detection, top-level dict validation, and Draft-7 error explanations.
+- Enhanced `backend/buyer/aggregator.py`:
+  - Guaranteed zero-hallucination aggregation: Only validated outputs (`CallStatus.SUCCEEDED`) are aggregated into `market_data`, `web_sources`, and `summary`.
+  - Quarantined `CallStatus.PAID_OUTPUT_REJECTED` into `rejected_outputs` and uncharged failures into `failed_calls`.
+  - Deterministic field-level provenance linking each finding in `market_data` and `summary` to `service_id`, `call_id`, `step_id`, `category`, `schema_version`, `timestamp`, `payment_reference`, and `validation_status: "valid"`.
+  - Transparent execution disclosures appended to user-facing summary.
+- Enhanced `backend/buyer/service.py`:
+  - On verified payment with schema non-compliance: status is marked `PAID_OUTPUT_REJECTED` in both task record and Member 4's ledger. Amount paid and transaction hash are preserved (never erased), and budget remains committed.
+  - Permitted fallback only when plan allows, budget covers it, and prior payment was cleanly uncharged; blocked fallback on uncertain settlements (`PENDING_RECONCILIATION`).
+- Created test suite `backend/tests/test_output_validation_provenance.py` (5 tests):
+  1. `test_output_validator_rejects_malformed_json_and_invalid_content_type` [PASSED]
+  2. `test_rejected_output_after_verified_payment_preserves_cost_and_evidence` [PASSED]
+  3. `test_blocked_fallback_when_settlement_uncertain` [PASSED]
+  4. `test_result_aggregator_provenance_and_zero_fact_fabrication` [PASSED]
+  5. `test_end_to_end_demonstration_accepted_outputs_rejected_output_and_provenance` [PASSED]
+- Ran full test suite via `python scripts/run_tests.py`: **83 of 83 tests passed (100% pass rate in 1.57s)**.
+
+
 
 
 

@@ -105,10 +105,15 @@ class ServiceCallRecord(BaseModel):
     amount_paid_usdc: str = "0.000000"
     latency_ms: float = 0.0
     transaction_hash: Optional[str] = None
+    payment_reference: Optional[str] = None
+    schema_version: Optional[str] = "1.0.0"
     output: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     validation_status: str = "unvalidated"
+    validation_details: Optional[Dict[str, Any]] = None
+    source_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    completed_at: Optional[str] = None
 
 
 class ServiceSelectionReason(BaseModel):

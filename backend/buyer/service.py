@@ -542,18 +542,27 @@ class BuyerService:
                         }
                     )
 
+                    content_type = ""
                     if resp_paid.status_code == 200:
+                        content_type = resp_paid.headers.get("content-type", "application/json")
                         proof_header = resp_paid.headers.get(HEADER_X402_SETTLEMENT_PROOF)
                         # Step E: Verify settlement proof via Member 1 SettlementVerifier
                         receipt = await self.payment_client.verify_settlement(proof_header)
                         if receipt and (receipt.tx_hash or receipt.facilitator_receipt_id):
                             paid = True
-                            raw_output = resp_paid.json()
                             tx_hash = receipt.tx_hash or receipt.facilitator_receipt_id
+                            try:
+                                raw_output = resp_paid.json()
+                            except Exception as je:
+                                raw_output = resp_paid.text
+                                error_msg = f"Malformed JSON: {str(je)}"
                         else:
                             # HTTP 200 returned but settlement proof is missing or unverified -> UNCERTAIN SETTLEMENT
                             uncertain_payment = True
-                            raw_output = resp_paid.json()
+                            try:
+                                raw_output = resp_paid.json()
+                            except Exception:
+                                raw_output = resp_paid.text
                             error_msg = "Seller returned HTTP 200 but settlement proof is missing or unverified."
                     elif resp_paid.status_code in [502, 503, 504]:
                         uncertain_payment = True
@@ -584,7 +593,8 @@ class BuyerService:
                     listed_price_usdc=service.price_usdc,
                     amount_paid_usdc="0.000000",
                     error=error_msg,
-                    validation_status="not_applicable"
+                    validation_status="not_applicable",
+                    completed_at=datetime.now(timezone.utc).isoformat()
                 )
                 self.repository.record_call_to_ledger(
                     task_id=task_id,
@@ -615,9 +625,19 @@ class BuyerService:
         if paid:
             await budget_mgr.commit(res_id, service.price_atomic)
             amount_paid = service.price_usdc
+            completed_time = datetime.now(timezone.utc).isoformat()
+            schema_ver = getattr(service, "registry_version", "1.0.0")
+            source_meta = {
+                "endpoint_url": service.endpoint_url,
+                "network": service.network,
+                "seller_pay_to": service.pay_to,
+                "category": service.category.value
+            }
 
             # Validate output against registered Draft-7 output schema
-            is_valid, val_err = self.output_validator.validate_output(raw_output, service.output_schema)
+            is_valid, val_err = self.output_validator.validate_output(
+                raw_output, service.output_schema, content_type=content_type
+            )
             if not is_valid:
                 warnings.append(f"Seller {service.service_id} output validation failed: {val_err}")
                 record = ServiceCallRecord(
@@ -631,9 +651,14 @@ class BuyerService:
                     amount_paid_usdc=amount_paid,
                     latency_ms=round(latency, 2),
                     transaction_hash=tx_hash,
-                    output=raw_output,
+                    payment_reference=tx_hash,
+                    schema_version=schema_ver,
+                    output=raw_output if isinstance(raw_output, dict) else {"raw": str(raw_output)},
                     error=f"Output validation rejected: {val_err}",
-                    validation_status="rejected"
+                    validation_status="rejected",
+                    validation_details={"schema_type": "Draft-7", "is_valid": False, "error": val_err},
+                    source_metadata=source_meta,
+                    completed_at=completed_time
                 )
                 self.repository.record_call_to_ledger(
                     task_id=task_id,
@@ -659,8 +684,13 @@ class BuyerService:
                 amount_paid_usdc=amount_paid,
                 latency_ms=round(latency, 2),
                 transaction_hash=tx_hash,
+                payment_reference=tx_hash,
+                schema_version=schema_ver,
                 output=raw_output,
-                validation_status="accepted"
+                validation_status="accepted",
+                validation_details={"schema_type": "Draft-7", "is_valid": True, "error": None},
+                source_metadata=source_meta,
+                completed_at=completed_time
             )
             self.repository.record_call_to_ledger(
                 task_id=task_id,
