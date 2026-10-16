@@ -44,6 +44,13 @@ from backend.sellers.dependencies import (
     get_seller_execution_context,
 )
 
+# Try importing Member 1's payment helper and verifier if available
+try:
+    from backend.payments import verify_seller_payment, get_seller_payment_verifier
+except ImportError:
+    verify_seller_payment = None
+    get_seller_payment_verifier = None
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/seller", tags=["Sellers"])
@@ -52,10 +59,24 @@ router = APIRouter(prefix="/api/v1/seller", tags=["Sellers"])
 def get_payment_verifier() -> Optional[SellerPaymentVerifierInterface]:
     """Dependency provider returning Member 1's concrete SellerPaymentVerifierInterface.
     
-    When Member 1 implements the concrete verifier, it will be injected here.
-    In tests or production, app.dependency_overrides[get_payment_verifier] can supply
-    the verifier instance. Defaults to None (fail-closed) when not yet implemented.
+    Checks in priority order:
+    1. Member 1's get_seller_payment_verifier() if implemented in backend.payments.
+    2. Member 1's seller_payment_verifier singleton if implemented in backend.payments.settlement.
+    3. Defaults to None (fail-closed) when not yet configured or in test environments.
     """
+    if get_seller_payment_verifier is not None:
+        try:
+            v = get_seller_payment_verifier()
+            if v is not None:
+                return v
+        except Exception:
+            pass
+    try:
+        from backend.payments.settlement import seller_payment_verifier
+        if isinstance(seller_payment_verifier, SellerPaymentVerifierInterface):
+            return seller_payment_verifier
+    except (ImportError, AttributeError):
+        pass
     return None
 
 
@@ -165,17 +186,18 @@ async def _verify_and_execute_seller(
     """Standardized seller execution handler with fail-closed payment authorization.
     
     Safety Invariants:
-    1. If no payment payload -> Return HTTP 402 challenge.
+    1. If no payment payload or empty string -> Return HTTP 402 challenge.
     2. If payment payload provided:
        - Validate JSON & PaymentPayload schema.
        - If no verifier available -> Fail closed (HTTP 503 Service Unavailable).
-       - If verifier available -> Invoke verifier.verify_and_settle().
-       - Only execute seller business logic AFTER verified authorization.
+       - If verifier available -> Invoke payment verification.
+       - Only execute seller business logic AFTER verified, genuine settlement proof.
        - Only attach X-402-Settlement-Proof if actual settlement receipt/tx_hash is returned.
+       - Never fabricate fake receipts (e.g. receipt_<random_uuid>).
     """
-    # 1. Challenge with HTTP 402 if payment payload is missing
+    # 1. Challenge with HTTP 402 if payment payload is missing or empty
     nonce = f"nonce_{context.request_id[:16]}"
-    if not raw_payment_payload:
+    if not raw_payment_payload or not raw_payment_payload.strip():
         return _build_402_challenge(
             service_id=service_id,
             amount_units=amount_units,
@@ -202,69 +224,133 @@ async def _verify_and_execute_seller(
             },
         )
 
-    # 3. Verify Payment with Member 1's Verifier (Fail-closed if verifier unavailable)
-    if verifier is None:
-        logger.error(
-            "Payment verification unavailable for service %s (req=%s). Concrete verifier not configured.",
-            service_id, context.request_id
-        )
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "error_code": "PAYMENT_VERIFIER_UNAVAILABLE",
-                "message": (
-                    "Payment verification engine is pending Member 1 integration. "
-                    "Cannot process paid call without verified settlement."
-                ),
-                "service_id": service_id,
-                "request_id": context.request_id,
-            },
+    # 3. Verify Payment
+    settlement_proof: Optional[str] = None
+    if verify_seller_payment is not None:
+        try:
+            verified_evidence = await verify_seller_payment(
+                service_id=service_id,
+                amount_units=amount_units,
+                pay_to=pay_to,
+                payment_payload_header=raw_payment_payload,
+                verifier=verifier,
+            )
+            if not verified_evidence or not isinstance(verified_evidence, str) or not verified_evidence.strip():
+                logger.warning(
+                    "verify_seller_payment returned empty proof for service %s (req=%s)",
+                    service_id, context.request_id
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    content={
+                        "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                        "message": "Payment authorization rejected: unconfirmed settlement proof.",
+                        "service_id": service_id,
+                        "request_id": context.request_id,
+                    },
+                )
+            settlement_proof = verified_evidence.strip()
+        except HTTPException as http_exc:
+            return JSONResponse(
+                status_code=http_exc.status_code,
+                content={
+                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                    "message": f"Payment authorization rejected: {http_exc.detail}",
+                    "service_id": service_id,
+                    "request_id": context.request_id,
+                },
+            )
+        except Exception as exc:
+            logger.warning("verify_seller_payment failed for service %s (req=%s): %s", service_id, context.request_id, exc)
+            return JSONResponse(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                content={
+                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                    "message": "Payment authorization verification failed.",
+                    "service_id": service_id,
+                    "request_id": context.request_id,
+                },
+            )
+    else:
+        # Fallback to direct SellerPaymentVerifierInterface
+        if verifier is None:
+            logger.error(
+                "Payment verification unavailable for service %s (req=%s). Concrete verifier not configured.",
+                service_id, context.request_id
+            )
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "error_code": "PAYMENT_VERIFIER_UNAVAILABLE",
+                    "message": (
+                        "Payment verification engine is pending Member 1 integration. "
+                        "Cannot process paid call without verified settlement."
+                    ),
+                    "service_id": service_id,
+                    "request_id": context.request_id,
+                },
+            )
+
+        requirement = PaymentRequirement(
+            version="2.0",
+            network=NETWORK_BASE_SEPOLIA,
+            token=USDC_BASE_SEPOLIA,
+            amount=str(amount_units),
+            payTo=pay_to,
+            nonce=nonce,
+            service_id=service_id,
         )
 
-    # Construct the requirement to verify against
-    requirement = PaymentRequirement(
-        version="2.0",
-        network=NETWORK_BASE_SEPOLIA,
-        token=USDC_BASE_SEPOLIA,
-        amount=str(amount_units),
-        payTo=pay_to,
-        nonce=nonce,
-        service_id=service_id,
-    )
+        try:
+            receipt = await verifier.verify_and_settle(payment_payload, requirement)
+        except Exception as verif_err:
+            logger.warning(
+                "Payment verification failed for service %s (req=%s): %s",
+                service_id, context.request_id, verif_err
+            )
+            return JSONResponse(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                content={
+                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                    "message": f"Payment authorization rejected: {verif_err}",
+                    "service_id": service_id,
+                    "request_id": context.request_id,
+                },
+            )
 
-    try:
-        receipt = await verifier.verify_and_settle(payment_payload, requirement)
-    except Exception as verif_err:
-        logger.warning(
-            "Payment verification failed for service %s (req=%s): %s",
-            service_id, context.request_id, verif_err
-        )
-        return JSONResponse(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            content={
-                "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                "message": f"Payment authorization rejected: {verif_err}",
-                "service_id": service_id,
-                "request_id": context.request_id,
-            },
-        )
+        if receipt is None:
+            logger.warning(
+                "Payment verification returned no receipt for service %s (req=%s)",
+                service_id, context.request_id
+            )
+            return JSONResponse(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                content={
+                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                    "message": "Payment authorization rejected: no settlement receipt produced.",
+                    "service_id": service_id,
+                    "request_id": context.request_id,
+                },
+            )
 
-    if receipt is None:
-        logger.warning(
-            "Payment verification returned no receipt for service %s (req=%s)",
-            service_id, context.request_id
-        )
-        return JSONResponse(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            content={
-                "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                "message": "Payment authorization rejected: no settlement receipt produced.",
-                "service_id": service_id,
-                "request_id": context.request_id,
-            },
-        )
+        proof = getattr(receipt, "tx_hash", None) or getattr(receipt, "facilitator_receipt_id", None)
+        if not proof or not isinstance(proof, str) or not proof.strip():
+            logger.warning(
+                "Payment verification returned empty/invalid proof for service %s (req=%s)",
+                service_id, context.request_id
+            )
+            return JSONResponse(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                content={
+                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                    "message": "Payment authorization rejected: unconfirmed settlement proof.",
+                    "service_id": service_id,
+                    "request_id": context.request_id,
+                },
+            )
+        settlement_proof = str(proof).strip()
 
-    # 4. Execute Service via BaseSellerService lifecycle only AFTER verification
+    # 4. Execute Service via BaseSellerService lifecycle only AFTER verified settlement
     try:
         output, metrics = await service.execute_lifecycle(payload, context=context)
     except Exception as exc:
@@ -276,13 +362,11 @@ async def _verify_and_execute_seller(
         content=output.model_dump(),
     )
 
-    # Only attach settlement proof header if actual receipt/tx_hash evidence is present
-    if receipt:
-        proof = receipt.tx_hash or receipt.facilitator_receipt_id
-        if proof:
-            response.headers[HEADER_X402_SETTLEMENT_PROOF] = str(proof)
+    if settlement_proof:
+        response.headers[HEADER_X402_SETTLEMENT_PROOF] = settlement_proof
 
     return response
+
 
 
 @router.post(

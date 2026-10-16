@@ -169,3 +169,39 @@ In an open payment-gated microservice environment, two edge failure modes exist:
 - `backend/sellers/routes.py` checks `if receipt is None:` immediately after calling `verifier.verify_and_settle()`, failing closed with HTTP 402 and `PAYMENT_AUTHORIZATION_FAILED`.
 - `_handle_seller_exception` maps `SellerExecutionError` to HTTP 500 with a static sanitized message (`"Internal execution error occurred within seller logic."`), verified by `test_seller_route_internal_exception_sanitization`.
 
+---
+
+## Decision 10: Server-Side Request Forgery (SSRF) Defense-in-Depth for Scraping Seller
+
+### 1. Context & Problem
+The scraping seller (`scraping_001`) receives arbitrary client-supplied URLs to extract web content. Malicious buyers could supply `http://localhost`, `http://127.0.0.1`, `http://169.254.169.254` (cloud metadata IP), or internal private LAN IPs (`10.x.x.x`, `192.168.x.x`), turning the seller microservice into an SSRF proxy to steal cloud credentials or compromise backend infrastructure.
+
+### 2. Theory & Logic
+- **Pre-Execution Input Boundary:** Scraping requests must be validated before expensive processing or payment settlement.
+- **Strict Protocol & Host Restriction:** Only `http` and `https` schemes are permitted. Hostnames are checked against loopback, link-local, cloud metadata, multicast, and RFC 1918 private CIDR blocks using Python's `ipaddress` library and canonical domain filters (`.local`, `.internal`, `.localhost`).
+- **Bounded Payloads:** Both request URLs (max 2048 chars) and extracted response content (max 50,000 chars) are strictly bounded to prevent memory exhaustion and DoS.
+
+### 3. How It Works
+- `ScrapingSellerInput` in `backend/sellers/schemas.py` validates URLs via `validate_url` classmethod, raising `ValueError` (resulting in HTTP 422) whenever a forbidden destination is supplied.
+- Tested and verified by `test_ssrf_protection_blocks_private_and_loopback_destinations` in `backend/tests/test_sellers_payment_integration.py`.
+
+---
+
+## Decision 11: Decoupling Settlement Verification Proof from Seller Execution Failure Handling
+
+### 1. Context & Problem
+Payment settlement and seller business execution are distinct failure domains. If a client submits a valid payment that settles with the facilitator/on-chain, but the seller service subsequently times out (HTTP 504), produces invalid output (HTTP 502), or crashes (HTTP 500):
+1. Should the seller fabricate a synthetic receipt? (Never).
+2. Should the seller return `X-402-Settlement-Proof` on error responses? (No, attaching settlement proof on 5xx codes confuses client payment engines into assuming successful delivery).
+3. How is the payment state preserved? The authoritative payment engine and ledger record the settled transaction as `paid` or `paid output rejected`, ensuring buyer funds and reputation scores are accounted for without corrupting HTTP transport semantics.
+
+### 2. Theory & Logic
+- **Transport Semantics vs Ledger Accounting:** HTTP error responses (500, 502, 504) represent service delivery failures and must never attach a settlement proof header or fabricate random UUID receipts (`receipt_<random_uuid>`).
+- **Zero Fabrication Rule:** Settlement proof is attached ONLY to HTTP 200 responses, containing the verbatim transaction hash or facilitator receipt ID returned by the authentic payment verifier.
+
+### 3. How It Works
+- `backend/sellers/routes.py` extracts `proof` from `SettlementReceipt` and checks that it is a non-empty, genuine string.
+- If seller execution fails, `_handle_seller_exception` emits the standard HTTP error status without settlement proof headers.
+- Verified by unit tests `test_confirmed_payment_followed_by_seller_timeout_leaves_no_fake_proof` and `test_confirmed_payment_followed_by_invalid_seller_output_fails_closed_502`.
+
+

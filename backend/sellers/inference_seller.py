@@ -31,13 +31,17 @@ class InferenceSellerService(BaseSellerService[InferenceSellerInput, InferenceSe
             f"Analytical Synthesis: Based on prompt '{prompt_snippet}', "
             "the system identified high-signal convergence towards autonomous microservice settlements."
         )
+        words = response_text.split()
+        bounded_words = words[: payload.max_tokens]
+        bounded_response = " ".join(bounded_words)
         return InferenceSellerOutput(
-            response=response_text,
+            response=bounded_response,
             model_used="agent-economy-reasoner-v1",
-            tokens_generated=len(response_text.split())
+            tokens_generated=len(bounded_words)
         )
 
     async def execute(self, payload: InferenceSellerInput) -> InferenceSellerOutput:
         """Backward-compatible direct execution method for existing routes & tests."""
         output, _ = await self.execute_lifecycle(payload)
         return output
+
