@@ -1,4 +1,5 @@
 """[IMPLEMENTED FOUNDATION] Payment Policy Verification Engine."""
+from typing import Optional
 from backend.shared.constants import (
     NETWORK_BASE_SEPOLIA,
     USDC_BASE_SEPOLIA,
@@ -6,6 +7,7 @@ from backend.shared.constants import (
 )
 from backend.shared.errors import PaymentPolicyViolationError
 from backend.shared.schemas import PaymentRequirement, ServiceDefinition
+from backend.payments.errors import ServiceDisabledError
 
 
 class PaymentPolicyVerifier:
@@ -21,6 +23,20 @@ class PaymentPolicyVerifier:
         self.allowed_token = allowed_token.lower()
         self.max_price_base_units = max_price_base_units
 
+    def verify_service_terms(self, service: ServiceDefinition) -> bool:
+        """Pre-flight check against registered service definition before contacting seller."""
+        if not service.is_active:
+            raise ServiceDisabledError(service.service_id)
+        if service.network.lower() != self.allowed_network:
+            raise PaymentPolicyViolationError(
+                f"Service network '{service.network}' does not match allowed network '{self.allowed_network}'"
+            )
+        if service.price_base_units > self.max_price_base_units:
+            raise PaymentPolicyViolationError(
+                f"Catalog price {service.price_base_units} exceeds ceiling {self.max_price_base_units}"
+            )
+        return True
+
     def verify(
         self,
         requirement: PaymentRequirement,
@@ -29,6 +45,10 @@ class PaymentPolicyVerifier:
         """Execute full policy check against registered service catalog data.
         Raises PaymentPolicyViolationError on any violation.
         """
+        # 0. Service Active Check
+        if not registered_service.is_active:
+            raise ServiceDisabledError(registered_service.service_id)
+
         # 1. Network Verification
         if requirement.network.lower() != self.allowed_network:
             raise PaymentPolicyViolationError(
@@ -54,6 +74,9 @@ class PaymentPolicyVerifier:
         except ValueError:
             raise PaymentPolicyViolationError(f"Invalid integer amount in requirement: {requirement.amount}")
 
+        if req_amount_units <= 0:
+            raise PaymentPolicyViolationError("Payment amount must be a positive integer.")
+
         if req_amount_units > registered_service.price_base_units:
             raise PaymentPolicyViolationError(
                 f"Price gouging detected: Quoted {req_amount_units} units, "
@@ -64,6 +87,12 @@ class PaymentPolicyVerifier:
         if req_amount_units > self.max_price_base_units:
             raise PaymentPolicyViolationError(
                 f"Price exceeds maximum ceiling: {req_amount_units} > {self.max_price_base_units} units"
+            )
+
+        # 6. Service ID Matching
+        if requirement.service_id and requirement.service_id != registered_service.service_id:
+            raise PaymentPolicyViolationError(
+                f"Service ID mismatch: Expected '{registered_service.service_id}', got '{requirement.service_id}'"
             )
 
         return True

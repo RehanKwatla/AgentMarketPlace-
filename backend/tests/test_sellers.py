@@ -60,21 +60,27 @@ def test_seller_input_validation_error(client):
 
 def test_seller_paid_execution_without_verifier_fails_closed(client):
     """Verify route returns HTTP 503 Service Unavailable when concrete verifier is not configured."""
-    headers = {
-        HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
-            "authorization": {"amount": "2000"},
-            "signature": "0x123",
-            "buyer_address": "0x0000000000000000000000000000000000000000"
-        })
-    }
-    response = client.post(
-        "/api/v1/seller/data",
-        json={"symbol": "ETH"},
-        headers=headers
-    )
-    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-    err = response.json()
-    assert err["error_code"] == "PAYMENT_VERIFIER_UNAVAILABLE"
+    from backend.main import app
+    from backend.sellers.routes import get_payment_verifier
+    app.dependency_overrides[get_payment_verifier] = lambda: None
+    try:
+        headers = {
+            HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
+                "authorization": {"amount": "2000"},
+                "signature": "0x123",
+                "buyer_address": "0x0000000000000000000000000000000000000000"
+            })
+        }
+        response = client.post(
+            "/api/v1/seller/data",
+            json={"symbol": "ETH"},
+            headers=headers
+        )
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        err = response.json()
+        assert err["error_code"] == "PAYMENT_VERIFIER_UNAVAILABLE"
+    finally:
+        app.dependency_overrides.pop(get_payment_verifier, None)
 
 
 def test_seller_paid_execution_malformed_payload(client):
@@ -113,35 +119,41 @@ def test_seller_paid_execution_arbitrary_unstructured_payload_rejected(client):
 
 def test_all_seller_routes_fail_closed_without_verifier(client):
     """Verify scraping and inference routes fail closed with HTTP 503 when verifier is unavailable."""
-    valid_payload_header = {
-        HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
-            "authorization": {"amount": "3000"},
+    from backend.main import app
+    from backend.sellers.routes import get_payment_verifier
+    app.dependency_overrides[get_payment_verifier] = lambda: None
+    try:
+        valid_payload_header = {
+            HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
+                "authorization": {"amount": "3000"},
+                "signature": "0x123",
+                "buyer_address": "0x0000000000000000000000000000000000000000"
+            })
+        }
+        # Scraping route
+        res_scraping = client.post(
+            "/api/v1/seller/scraping",
+            json={"url": "https://base.org"},
+            headers=valid_payload_header
+        )
+        assert res_scraping.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert res_scraping.json()["error_code"] == "PAYMENT_VERIFIER_UNAVAILABLE"
+
+        # Inference route
+        valid_payload_header[HEADER_X402_PAYMENT_PAYLOAD] = json.dumps({
+            "authorization": {"amount": "4000"},
             "signature": "0x123",
             "buyer_address": "0x0000000000000000000000000000000000000000"
         })
-    }
-    # Scraping route
-    res_scraping = client.post(
-        "/api/v1/seller/scraping",
-        json={"url": "https://base.org"},
-        headers=valid_payload_header
-    )
-    assert res_scraping.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-    assert res_scraping.json()["error_code"] == "PAYMENT_VERIFIER_UNAVAILABLE"
-
-    # Inference route
-    valid_payload_header[HEADER_X402_PAYMENT_PAYLOAD] = json.dumps({
-        "authorization": {"amount": "4000"},
-        "signature": "0x123",
-        "buyer_address": "0x0000000000000000000000000000000000000000"
-    })
-    res_inf = client.post(
-        "/api/v1/seller/inference",
-        json={"prompt": "Analyze", "max_tokens": 50},
-        headers=valid_payload_header
-    )
-    assert res_inf.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-    assert res_inf.json()["error_code"] == "PAYMENT_VERIFIER_UNAVAILABLE"
+        res_inf = client.post(
+            "/api/v1/seller/inference",
+            json={"prompt": "Analyze", "max_tokens": 50},
+            headers=valid_payload_header
+        )
+        assert res_inf.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert res_inf.json()["error_code"] == "PAYMENT_VERIFIER_UNAVAILABLE"
+    finally:
+        app.dependency_overrides.pop(get_payment_verifier, None)
 
 
 def test_seller_paid_execution_with_mock_verifier(client):
@@ -599,6 +611,7 @@ def test_seller_logic_never_executed_on_unauthorized_payment(client):
         assert execution_count == 0
 
         # Case 3: Verifier unavailable (None)
+        app.dependency_overrides[get_payment_verifier] = lambda: None
         valid_hdr = {
             HEADER_X402_PAYMENT_PAYLOAD: json.dumps({
                 "authorization": {"amount": "2000"},
