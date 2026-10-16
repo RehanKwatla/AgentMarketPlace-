@@ -23,46 +23,46 @@ export const ServicesLeaderboard: React.FC<ServicesLeaderboardProps> = ({
     switch (cat.toLowerCase()) {
       case 'data':
         return {
-          badge: 'text-[#36D6C8] bg-[rgba(54,214,200,0.12)] border-[rgba(54,214,200,0.25)]',
-          icon: <Database className="w-3.5 h-3.5 text-[#36D6C8]" />
+          badge: 'text-[#FFFFFF] bg-[rgba(255, 255, 255,0.12)] border-[rgba(255, 255, 255,0.25)]',
+          icon: <Database className="w-3.5 h-3.5 text-[#FFFFFF]" />
         };
       case 'scraping':
         return {
-          badge: 'text-[#42C995] bg-[rgba(66,201,149,0.12)] border-[rgba(66,201,149,0.25)]',
-          icon: <Globe className="w-3.5 h-3.5 text-[#42C995]" />
+          badge: 'text-[#A3A3A3] bg-[rgba(163, 163, 163,0.12)] border-[rgba(163, 163, 163,0.25)]',
+          icon: <Globe className="w-3.5 h-3.5 text-[#A3A3A3]" />
         };
       case 'inference':
         return {
-          badge: 'text-[#53E3D6] bg-[rgba(18,74,69,0.3)] border-[rgba(54,214,200,0.3)]',
-          icon: <Cpu className="w-3.5 h-3.5 text-[#53E3D6]" />
+          badge: 'text-[#D4D4D4] bg-[rgba(38, 38, 38,0.3)] border-[rgba(255, 255, 255,0.3)]',
+          icon: <Cpu className="w-3.5 h-3.5 text-[#D4D4D4]" />
         };
       default:
         return {
-          badge: 'text-[#A0AAA7] bg-[#141A19] border-[rgba(120,160,153,0.2)]',
-          icon: <Sparkles className="w-3.5 h-3.5 text-[#A0AAA7]" />
+          badge: 'text-[#A3A3A3] bg-[#141414] border-[rgba(255, 255, 255,0.2)]',
+          icon: <Sparkles className="w-3.5 h-3.5 text-[#A3A3A3]" />
         };
     }
   };
 
   return (
-    <div className="bg-[#101514] rounded-xl overflow-hidden flex flex-col h-full border border-[rgba(120,160,153,0.16)]">
+    <div className="bg-[#111111] rounded-xl overflow-hidden flex flex-col h-full border border-[rgba(255, 255, 255,0.16)]">
       {/* Header */}
-      <div className="p-3.5 border-b border-[rgba(120,160,153,0.14)] flex items-center justify-between bg-[#0D1111]">
+      <div className="p-3.5 border-b border-[rgba(255, 255, 255,0.14)] flex items-center justify-between bg-[#0D0D0D]">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-[#141A19] border border-[rgba(54,214,200,0.25)] flex items-center justify-center text-[#36D6C8]">
+          <div className="w-6 h-6 rounded bg-[#141414] border border-[rgba(255, 255, 255,0.25)] flex items-center justify-center text-[#FFFFFF]">
             <Trophy className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h3 className="font-semibold text-xs text-[#F4F7F6]">Services Leaderboard</h3>
-            <p className="text-[11px] text-[#A0AAA7]">Ranked by reputation and verified volume</p>
+            <h3 className="font-semibold text-xs text-[#FAFAFA]">Services Leaderboard</h3>
+            <p className="text-[11px] text-[#A3A3A3]">Ranked by reputation and verified volume</p>
           </div>
         </div>
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-[rgba(120,160,153,0.10)] overflow-y-auto max-h-[360px] text-xs">
+      <div className="divide-y divide-[rgba(255, 255, 255,0.10)] overflow-y-auto max-h-[360px] text-xs">
         {sorted.length === 0 ? (
-          <div className="p-8 text-center text-[#6F7C78]">
+          <div className="p-8 text-center text-[#737373]">
             No services registered yet.
           </div>
         ) : (
@@ -75,36 +75,36 @@ export const ServicesLeaderboard: React.FC<ServicesLeaderboardProps> = ({
               <div
                 key={svc.service_id}
                 onClick={() => onSelectService(svc)}
-                className="px-3.5 py-3 flex items-center justify-between hover:bg-[#141A19] cursor-pointer transition-colors group"
+                className="px-3.5 py-3 flex items-center justify-between hover:bg-[#141414] cursor-pointer transition-colors group"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className={`font-mono text-xs w-4 text-center shrink-0 ${index === 0 ? 'text-[#36D6C8] font-bold' : 'text-[#6F7C78]'}`}>
+                  <span className={`font-mono text-xs w-4 text-center shrink-0 ${index === 0 ? 'text-[#FFFFFF] font-bold' : 'text-[#737373]'}`}>
                     {index + 1}
                   </span>
 
-                  <div className="w-7 h-7 rounded bg-[#0D1111] border border-[rgba(120,160,153,0.18)] flex items-center justify-center shrink-0">
+                  <div className="w-7 h-7 rounded bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] flex items-center justify-center shrink-0">
                     {theme.icon}
                   </div>
 
                   <div className="truncate">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-medium text-[#F4F7F6] group-hover:text-[#36D6C8] transition-colors truncate">
+                      <span className="font-medium text-[#FAFAFA] group-hover:text-[#FFFFFF] transition-colors truncate">
                         {svc.name}
                       </span>
                       {hasCalls && (
                         <span title="Verified calls processed" className="inline-flex">
-                          <CheckCircle2 className="w-3 h-3 text-[#42C995] shrink-0" />
+                          <CheckCircle2 className="w-3 h-3 text-[#A3A3A3] shrink-0" />
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-[#A0AAA7] font-mono truncate block mt-0.5">
+                    <span className="text-[11px] text-[#A3A3A3] font-mono truncate block mt-0.5">
                       {svc.price_usdc} USDC · {svc.endpoint_url}
                     </span>
                   </div>
                 </div>
 
                 <div className="shrink-0 ml-2">
-                  <span className="text-[11px] capitalize px-2 py-0.5 rounded border border-[rgba(54,214,200,0.20)] bg-[rgba(54,214,200,0.08)] text-[#36D6C8] font-medium">
+                  <span className="text-[11px] capitalize px-2 py-0.5 rounded border border-[rgba(255, 255, 255,0.20)] bg-[rgba(255, 255, 255,0.08)] text-[#FFFFFF] font-medium">
                     {svc.category}
                   </span>
                 </div>

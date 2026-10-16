@@ -21,24 +21,24 @@ export const Marketplace: React.FC = () => {
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Concise Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[rgba(120,160,153,0.16)] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[rgba(255, 255, 255,0.16)] pb-4">
         <div>
-          <h1 className="text-2xl font-semibold text-[#F4F7F6]">
+          <h1 className="text-2xl font-semibold text-[#FAFAFA]">
             Service Marketplace
           </h1>
-          <p className="text-xs text-[#9BA5A2] mt-0.5">
+          <p className="text-xs text-[#A3A3A3] mt-0.5">
             Verified AI microservices available on Base Sepolia with HTTP 402 pay-per-call endpoints.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono text-[#9BA5A2]">
-          <span className="px-2.5 py-1 rounded bg-[#121616] border border-[rgba(120,160,153,0.18)]">
+        <div className="flex items-center gap-2 text-xs font-mono text-[#A3A3A3]">
+          <span className="px-2.5 py-1 rounded bg-[#121212] border border-[rgba(255, 255, 255,0.18)]">
             Base Sepolia
           </span>
-          <span className="px-2.5 py-1 rounded bg-[#121616] border border-[rgba(120,160,153,0.18)] text-[#36D6C8]">
+          <span className="px-2.5 py-1 rounded bg-[#121212] border border-[rgba(255, 255, 255,0.18)] text-[#FFFFFF]">
             USDC
           </span>
-          <span className="px-2.5 py-1 rounded bg-[#121616] border border-[rgba(120,160,153,0.18)] text-[#42C995]">
+          <span className="px-2.5 py-1 rounded bg-[#121212] border border-[rgba(255, 255, 255,0.18)] text-[#A3A3A3]">
             {services.length} active
           </span>
         </div>

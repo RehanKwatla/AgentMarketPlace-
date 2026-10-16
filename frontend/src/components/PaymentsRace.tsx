@@ -48,16 +48,16 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
         vy: (Math.random() - 0.5) * 0.35,
         radius: isAgent ? Math.random() * 1.8 + 1 : Math.random() * 2 + 1,
         alpha: Math.random() * 0.5 + 0.3,
-        color: isAgent ? '#36D6C8' : '#42C995',
+        color: isAgent ? '#FFFFFF' : '#A3A3A3',
       });
     }
 
     const render = () => {
-      ctx.fillStyle = '#0F1313';
+      ctx.fillStyle = '#0F0F0F';
       ctx.fillRect(0, 0, width, height);
 
       // Subtle grid
-      ctx.strokeStyle = 'rgba(120, 160, 153, 0.07)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
       ctx.lineWidth = 1;
       for (let x = 0; x < width; x += 40) {
         ctx.beginPath();
@@ -73,7 +73,7 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
       }
 
       // Divider line
-      ctx.strokeStyle = 'rgba(120, 160, 153, 0.16)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
       ctx.beginPath();
       ctx.moveTo(0, height * 0.52);
       ctx.lineTo(width, height * 0.52);
@@ -110,38 +110,38 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
   }, [humanTxCount, agentTxCount]);
 
   return (
-    <div className="wallet-card rounded-lg overflow-hidden border border-[rgba(120,160,153,0.18)]">
+    <div className="wallet-card rounded-lg overflow-hidden border border-[rgba(255, 255, 255,0.18)]">
       {/* Header */}
-      <div className="px-4 py-2.5 border-b border-[rgba(120,160,153,0.16)] flex items-center justify-between bg-[#0E1212] text-xs font-sans">
+      <div className="px-4 py-2.5 border-b border-[rgba(255, 255, 255,0.16)] flex items-center justify-between bg-[#0E0E0E] text-xs font-sans">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-[#F4F7F6]">Payment Flow Visualizer</span>
-          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161B1A] text-[#9BA5A2] border border-[rgba(120,160,153,0.2)]">
+          <span className="font-medium text-[#FAFAFA]">Payment Flow Visualizer</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#171717] text-[#A3A3A3] border border-[rgba(255, 255, 255,0.2)]">
             Telemetry
           </span>
         </div>
 
         <div className="flex items-center gap-4 text-xs font-mono">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#42C995]" />
-            <span className="text-[#9BA5A2]">Human:</span>
-            <span className="text-[#F4F7F6]">{humanTxCount}</span>
+            <span className="w-2 h-2 rounded-full bg-[#A3A3A3]" />
+            <span className="text-[#A3A3A3]">Human:</span>
+            <span className="text-[#FAFAFA]">{humanTxCount}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#36D6C8]" />
-            <span className="text-[#9BA5A2]">Agent:</span>
-            <span className="text-[#36D6C8] font-medium">{agentTxCount}</span>
+            <span className="w-2 h-2 rounded-full bg-[#FFFFFF]" />
+            <span className="text-[#A3A3A3]">Agent:</span>
+            <span className="text-[#FFFFFF] font-medium">{agentTxCount}</span>
           </div>
         </div>
       </div>
 
       {/* Canvas */}
-      <div className="relative w-full h-[240px] bg-[#0F1313]">
+      <div className="relative w-full h-[240px] bg-[#0F0F0F]">
         <canvas ref={canvasRef} className="w-full h-full block" />
-        <div className="absolute left-3 top-2.5 text-[11px] font-sans text-[#6B7673]">
+        <div className="absolute left-3 top-2.5 text-[11px] font-sans text-[#737373]">
           Manual Human Flow
         </div>
-        <div className="absolute left-3 bottom-2.5 text-[11px] font-sans text-[#36D6C8]">
+        <div className="absolute left-3 bottom-2.5 text-[11px] font-sans text-[#FFFFFF]">
           Autonomous x402 Flow
         </div>
       </div>

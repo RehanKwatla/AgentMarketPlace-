@@ -58,7 +58,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           <button
             onClick={() => setExplorerTab('services')}
             className={`px-3 py-1.5 rounded-lg transition-colors ${
-              explorerTab === 'services' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              explorerTab === 'services' ? 'bg-white text-black font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
             Services ({services.length})
@@ -66,7 +66,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           <button
             onClick={() => setExplorerTab('endpoints')}
             className={`px-3 py-1.5 rounded-lg transition-colors ${
-              explorerTab === 'endpoints' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              explorerTab === 'endpoints' ? 'bg-white text-black font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
             Endpoints
@@ -74,7 +74,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           <button
             onClick={() => setExplorerTab('bundles')}
             className={`px-3 py-1.5 rounded-lg transition-colors ${
-              explorerTab === 'bundles' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              explorerTab === 'bundles' ? 'bg-white text-black font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
             Bundles (3)
@@ -95,7 +95,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
             placeholder="Search by name, endpoint or description..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-white/50"
           />
         </div>
 
@@ -103,7 +103,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500 capitalize"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-white/50 capitalize"
           >
             <option value="all">All Categories</option>
             <option value="data">Data</option>
@@ -118,7 +118,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
             placeholder="Max USDC..."
             value={maxPrice}
             onChange={(e) => setMaxPrice(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-white/50"
           />
         </div>
 
@@ -126,7 +126,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           <select
             value={sortField}
             onChange={(e: any) => setSortField(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-white/50"
           >
             <option value="price">Sort: Price</option>
             <option value="calls">Sort: Calls</option>
@@ -182,7 +182,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
                         1 endpoint
                       </td>
 
-                      <td className="px-4 py-3.5 text-emerald-400 font-bold">
+                      <td className="px-4 py-3.5 text-neutral-300 font-bold">
                         {svc.price_usdc} USDC
                       </td>
 
@@ -192,7 +192,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
 
                       <td className="px-4 py-3.5">
                         {calls > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-neutral-300">
                             <ShieldCheck className="w-3.5 h-3.5" />
                             <span>Verified</span>
                           </span>
@@ -210,7 +210,7 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
                         </button>
                         <button
                           onClick={() => onRunService(svc)}
-                          className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors"
+                          className="px-3 py-1 rounded bg-white hover:bg-neutral-200 text-black text-xs font-bold transition-colors"
                         >
                           Run
                         </button>
@@ -255,16 +255,16 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
               <div key={svc.service_id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-blue-400 font-bold uppercase text-[10px] bg-blue-950 px-1.5 py-0.5 rounded border border-blue-800">POST</span>
+                    <span className="text-white font-bold uppercase text-[10px] bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-700">POST</span>
                     <span className="text-white font-semibold">{svc.endpoint_url}</span>
                   </div>
                   <p className="text-slate-400 text-xs font-sans mt-1">{svc.description}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-emerald-400 font-bold">{svc.price_usdc} USDC</span>
+                  <span className="text-neutral-300 font-bold">{svc.price_usdc} USDC</span>
                   <button
                     onClick={() => onRunService(svc)}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-neutral-200 text-black font-bold"
                   >
                     Invoke
                   </button>
@@ -278,16 +278,16 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
       {explorerTab === 'bundles' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
-            <span className="text-cyan-400 font-mono text-xs uppercase font-bold">Pipeline Bundle</span>
+            <span className="text-neutral-300 font-mono text-xs uppercase font-bold">Pipeline Bundle</span>
             <h4 className="text-base font-bold text-white">Full Market Intelligence</h4>
             <p className="text-xs text-slate-400 leading-relaxed font-sans">
               Combines financial market data extraction with multi-token analytical inference.
             </p>
             <div className="pt-2 flex items-center justify-between border-t border-slate-800 text-xs font-mono">
-              <span className="text-emerald-400 font-bold">~0.006 USDC</span>
+              <span className="text-neutral-300 font-bold">~0.006 USDC</span>
               <button 
                 onClick={() => onRunService(services[0])}
-                className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                className="px-3 py-1 rounded bg-white hover:bg-neutral-200 text-black font-bold"
               >
                 Run Bundle
               </button>
@@ -295,16 +295,16 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           </div>
 
           <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
-            <span className="text-amber-400 font-mono text-xs uppercase font-bold">Pipeline Bundle</span>
+            <span className="text-neutral-400 font-mono text-xs uppercase font-bold">Pipeline Bundle</span>
             <h4 className="text-base font-bold text-white">Deep Web Synthesis</h4>
             <p className="text-xs text-slate-400 leading-relaxed font-sans">
               Scrapes web documentation and feeds parsed content into LLM summarization.
             </p>
             <div className="pt-2 flex items-center justify-between border-t border-slate-800 text-xs font-mono">
-              <span className="text-emerald-400 font-bold">~0.007 USDC</span>
+              <span className="text-neutral-300 font-bold">~0.007 USDC</span>
               <button 
                 onClick={() => onRunService(services[1] || services[0])}
-                className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                className="px-3 py-1 rounded bg-white hover:bg-neutral-200 text-black font-bold"
               >
                 Run Bundle
               </button>
@@ -312,16 +312,16 @@ export const ServiceExplorerView: React.FC<ServiceExplorerViewProps> = ({
           </div>
 
           <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
-            <span className="text-purple-400 font-mono text-xs uppercase font-bold">Pipeline Bundle</span>
+            <span className="text-neutral-400 font-mono text-xs uppercase font-bold">Pipeline Bundle</span>
             <h4 className="text-base font-bold text-white">Direct Inference Reasoning</h4>
             <p className="text-xs text-slate-400 leading-relaxed font-sans">
               Multi-token reasoning with schema adherence and deterministic output guarantees.
             </p>
             <div className="pt-2 flex items-center justify-between border-t border-slate-800 text-xs font-mono">
-              <span className="text-emerald-400 font-bold">~0.004 USDC</span>
+              <span className="text-neutral-300 font-bold">~0.004 USDC</span>
               <button 
                 onClick={() => onRunService(services[2] || services[0])}
-                className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                className="px-3 py-1 rounded bg-white hover:bg-neutral-200 text-black font-bold"
               >
                 Run Bundle
               </button>

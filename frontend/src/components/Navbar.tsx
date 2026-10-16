@@ -54,15 +54,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-3 cursor-pointer select-none shrink-0"
             onClick={() => setActiveTab('marketplace')}
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-neutral-200 via-neutral-400 to-neutral-700 flex items-center justify-center shadow-lg shadow-white/10 text-white">
               <Bot className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold tracking-tight text-white text-base">
-                  Agentic <span className="text-blue-400 font-semibold">Market</span>
+                  Agentic <span className="text-white font-semibold">Market</span>
                 </span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 border border-white/20">
                   x402 v2
                 </span>
               </div>
@@ -79,7 +79,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <input
                 type="text"
                 placeholder="Search services, capabilities, or endpoints..."
-                className="w-full bg-slate-900/90 border border-slate-800 rounded-lg pl-10 pr-12 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/50 font-sans transition-all"
+                className="w-full bg-slate-900/90 border border-slate-800 rounded-lg pl-10 pr-12 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-white/60 focus:ring-1 focus:ring-white/30 font-sans transition-all"
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setActiveTab(item.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     isActive
-                      ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30 font-semibold'
+                      ? 'bg-white/10 text-white border border-white/20 font-semibold'
                       : 'text-slate-300 hover:text-white hover:bg-slate-900/70 border border-transparent'
                   }`}
                 >
@@ -121,7 +121,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-[11px] font-mono"
               title={`Network Identifier: ${network} (USDC)`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               <span className="text-slate-300 font-medium">Base Sepolia</span>
             </div>
 
@@ -130,14 +130,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-[11px] font-mono"
               title="FastAPI Subsystem Connectivity & Readiness"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${isHealthy ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${isHealthy ? 'bg-neutral-400' : 'bg-neutral-600'}`} />
               <span className="text-slate-300 text-[11px]">{isHealthy ? 'CONNECTED' : 'OFFLINE'}</span>
             </div>
 
             {/* Get Started Button */}
             <button
               onClick={() => setActiveTab('task-console')}
-              className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-mono uppercase tracking-wide transition-all shadow-md shadow-blue-500/20"
+              className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-neutral-200 text-black text-xs font-bold font-mono uppercase tracking-wide transition-all "
             >
               Get Started
             </button>
@@ -150,7 +150,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium border border-slate-800 transition-colors"
             >
-              <PlusCircle className="w-3.5 h-3.5 text-blue-400" />
+              <PlusCircle className="w-3.5 h-3.5 text-white" />
               <span>Publish</span>
             </button>
 
@@ -193,7 +193,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }}
                     className={`flex items-center gap-2 p-2 rounded-lg text-xs font-medium text-left transition-colors ${
                       isActive
-                        ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                        ? 'bg-white/10 text-white border border-white/20'
                         : 'text-slate-300 hover:bg-slate-900 border border-slate-800/60'
                     }`}
                   >

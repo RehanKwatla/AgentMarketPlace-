@@ -58,13 +58,13 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
       {/* Search and Filters Bar */}
       <div className="wallet-card rounded-lg p-2.5 flex flex-col md:flex-row items-center gap-2.5 text-xs">
         <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#6B7673]" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#737373]" />
           <input
             type="text"
             placeholder="Search by name, endpoint, or capability..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md pl-8 pr-3 py-1.5 text-[#F4F7F6] placeholder-[#6B7673] focus:outline-none focus:border-[#36D6C8] font-sans"
+            className="w-full bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md pl-8 pr-3 py-1.5 text-[#FAFAFA] placeholder-[#737373] focus:outline-none focus:border-[#FFFFFF] font-sans"
           />
         </div>
 
@@ -73,7 +73,7 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1.5 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8] font-sans"
+            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1.5 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF] font-sans"
           >
             <option value="all">All Categories</option>
             <option value="data">Data</option>
@@ -85,7 +85,7 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
           <select
             value={networkFilter}
             onChange={(e) => setNetworkFilter(e.target.value)}
-            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1.5 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8] font-sans"
+            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1.5 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF] font-sans"
           >
             <option value="all">All Networks</option>
             <option value="eip155:84532">Base Sepolia</option>
@@ -95,7 +95,7 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
           <select
             value={priceFilter}
             onChange={(e) => setPriceFilter(e.target.value)}
-            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1.5 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8] font-sans"
+            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1.5 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF] font-sans"
           >
             <option value="all">Any Price</option>
             <option value="under_003">≤ 0.003 USDC</option>
@@ -106,7 +106,7 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1.5 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8] font-sans"
+            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1.5 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF] font-sans"
           >
             <option value="price_asc">Price: Low to High</option>
             <option value="price_desc">Price: High to Low</option>
@@ -116,17 +116,17 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
           </select>
 
           {/* View Toggle */}
-          <div className="flex items-center border border-[rgba(120,160,153,0.18)] rounded-md bg-[#0D1010] p-0.5 ml-auto md:ml-0">
+          <div className="flex items-center border border-[rgba(255, 255, 255,0.18)] rounded-md bg-[#0D0D0D] p-0.5 ml-auto md:ml-0">
             <button
               onClick={() => setViewMode('table')}
-              className={`p-1 rounded ${viewMode === 'table' ? 'bg-[#161B1A] text-[#36D6C8]' : 'text-[#6B7673] hover:text-[#9BA5A2]'}`}
+              className={`p-1 rounded ${viewMode === 'table' ? 'bg-[#171717] text-[#FFFFFF]' : 'text-[#737373] hover:text-[#A3A3A3]'}`}
               title="Table View"
             >
               <List className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => setViewMode('cards')}
-              className={`p-1 rounded ${viewMode === 'cards' ? 'bg-[#161B1A] text-[#36D6C8]' : 'text-[#6B7673] hover:text-[#9BA5A2]'}`}
+              className={`p-1 rounded ${viewMode === 'cards' ? 'bg-[#171717] text-[#FFFFFF]' : 'text-[#737373] hover:text-[#A3A3A3]'}`}
               title="Card View"
             >
               <Grid className="w-3.5 h-3.5" />
@@ -137,14 +137,14 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
 
       {/* Main Content Area: Simple Table (Default) or Cards */}
       {filtered.length === 0 ? (
-        <div className="wallet-card rounded-lg p-10 text-center text-xs text-[#9BA5A2]">
+        <div className="wallet-card rounded-lg p-10 text-center text-xs text-[#A3A3A3]">
           No matching services found for the current filters.
         </div>
       ) : viewMode === 'table' ? (
-        <div className="wallet-card rounded-lg border border-[rgba(120,160,153,0.18)] overflow-hidden">
+        <div className="wallet-card rounded-lg border border-[rgba(255, 255, 255,0.18)] overflow-hidden">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-[rgba(120,160,153,0.16)] bg-[#0E1212] text-[#9BA5A2]">
+              <tr className="border-b border-[rgba(255, 255, 255,0.16)] bg-[#0E0E0E] text-[#A3A3A3]">
                 <th className="py-2.5 px-4 font-medium">Service Name</th>
                 <th className="py-2.5 px-4 font-medium">Category</th>
                 <th className="py-2.5 px-4 font-medium">Description</th>
@@ -153,33 +153,33 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
                 <th className="py-2.5 px-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[rgba(120,160,153,0.12)] text-[#F4F7F6]">
+            <tbody className="divide-y divide-[rgba(255, 255, 255,0.12)] text-[#FAFAFA]">
               {filtered.map((svc) => (
                 <tr 
                   key={svc.service_id}
                   onClick={() => onSelectService(svc)}
-                  className="hover:bg-[#151A1A] transition-colors cursor-pointer"
+                  className="hover:bg-[#151515] transition-colors cursor-pointer"
                 >
                   <td className="py-3 px-4 font-medium">
                     <div>{svc.name}</div>
-                    <div className="text-[11px] text-[#9BA5A2] font-mono">{svc.service_id}</div>
+                    <div className="text-[11px] text-[#A3A3A3] font-mono">{svc.service_id}</div>
                   </td>
 
                   <td className="py-3 px-4">
-                    <span className="capitalize text-[11px] px-2 py-0.5 rounded bg-[#161B1A] text-[#9BA5A2] border border-[rgba(120,160,153,0.18)]">
+                    <span className="capitalize text-[11px] px-2 py-0.5 rounded bg-[#171717] text-[#A3A3A3] border border-[rgba(255, 255, 255,0.18)]">
                       {svc.category}
                     </span>
                   </td>
 
-                  <td className="py-3 px-4 text-[#9BA5A2] text-xs max-w-xs truncate font-sans">
+                  <td className="py-3 px-4 text-[#A3A3A3] text-xs max-w-xs truncate font-sans">
                     {svc.description}
                   </td>
 
-                  <td className="py-3 px-4 font-mono font-medium text-[#36D6C8] whitespace-nowrap">
+                  <td className="py-3 px-4 font-mono font-medium text-[#FFFFFF] whitespace-nowrap">
                     {svc.price_usdc} USDC
                   </td>
 
-                  <td className="py-3 px-4 font-mono text-[11px] text-[#9BA5A2] hidden lg:table-cell max-w-[180px] truncate">
+                  <td className="py-3 px-4 font-mono text-[11px] text-[#A3A3A3] hidden lg:table-cell max-w-[180px] truncate">
                     {svc.endpoint_url}
                   </td>
 
@@ -189,7 +189,7 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
                         e.stopPropagation();
                         onSelectService(svc);
                       }}
-                      className="px-2.5 py-1 rounded bg-[#161B1A] hover:bg-[#1F2524] text-[#9BA5A2] hover:text-[#F4F7F6] text-xs border border-[rgba(120,160,153,0.2)] transition-colors cursor-pointer"
+                      className="px-2.5 py-1 rounded bg-[#171717] hover:bg-[#1F1F1F] text-[#A3A3A3] hover:text-[#FAFAFA] text-xs border border-[rgba(255, 255, 255,0.2)] transition-colors cursor-pointer"
                     >
                       Details
                     </button>
@@ -198,7 +198,7 @@ export const ExploreServices: React.FC<ExploreServicesProps> = ({
                         e.stopPropagation();
                         onRunService(svc);
                       }}
-                      className="px-2.5 py-1 rounded bg-[#36D6C8] hover:bg-[#45DFD2] text-[#0B0D0D] font-medium text-xs transition-colors cursor-pointer"
+                      className="px-2.5 py-1 rounded bg-[#FFFFFF] hover:bg-[#E5E5E5] text-[#0A0A0A] font-medium text-xs transition-colors cursor-pointer"
                     >
                       Use in Task
                     </button>
