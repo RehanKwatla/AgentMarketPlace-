@@ -9,30 +9,46 @@
 
 body {
   margin: 0;
-  background-color: #030712;
-  color: #f3f4f6;
+  background-color: #101112;
+  color: #F5F5F5;
   overflow-x: hidden;
 }
 
-code, pre {
+code, pre, .font-mono {
   font-family: 'JetBrains Mono', monospace;
 }
 
-.glass-panel {
-  background: rgba(17, 24, 39, 0.7);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* Custom dark charcoal theme scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #101112;
+}
+::-webkit-scrollbar-thumb {
+  background: #303133;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF982E;
 }
 
-.glass-card {
-  background: rgba(31, 41, 55, 0.5);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.panel-bg {
+  background-color: #171819;
+  border: 1px solid #303133;
 }
 
-.glass-card:hover {
-  border-color: rgba(96, 165, 250, 0.4);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.5);
+.panel-secondary {
+  background-color: #1D1E20;
+  border: 1px solid #303133;
+}
+
+.orange-glow {
+  box-shadow: 0 0 20px rgba(255, 152, 46, 0.25);
+}
+
+.orange-border-glow:hover {
+  border-color: #FF982E;
+  box-shadow: 0 0 15px rgba(255, 152, 46, 0.2);
 }
