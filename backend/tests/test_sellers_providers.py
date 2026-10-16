@@ -815,3 +815,156 @@ async def test_safe_scraping_fetcher_multi_hop_independent_pinning():
             assert created_pins == ["93.184.216.34", "104.26.10.228"]
 
 
+@pytest.mark.asyncio
+async def test_gemini_error_handling_and_normalization():
+    """Verify Gemini API handles 429, 500, timeout, malformed JSON, and empty responses safely."""
+    settings = ProviderSettings(
+        mode=ProviderMode.LIVE,
+        inference_provider=InferenceProviderType.GEMINI,
+        gemini_api_key="gemini-secret-test-key",
+    )
+
+    # 1. 429 Rate Limit
+    p_429 = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(429, headers={"Retry-After": "10"}))),
+    )
+    with pytest.raises(ProviderRateLimitError) as exc_429:
+        await p_429.generate("prompt", 50, 0.5)
+    assert exc_429.value.retry_after_seconds == 10.0
+    assert "gemini-secret-test-key" not in str(exc_429.value)
+
+    # 2. 500 Upstream Server Error
+    p_500 = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(500, text="Internal error"))),
+    )
+    with pytest.raises(ProviderUpstreamError) as exc_500:
+        await p_500.generate("prompt", 50, 0.5)
+    assert exc_500.value.status_code == 502
+
+    # 3. Malformed JSON Response
+    p_bad_json = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, text="not-valid-json"))),
+    )
+    with pytest.raises(ProviderResponseInvalidError):
+        await p_bad_json.generate("prompt", 50, 0.5)
+
+    # 4. Missing candidates
+    p_no_candidates = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"candidates": []}))),
+    )
+    with pytest.raises(ProviderResponseInvalidError):
+        await p_no_candidates.generate("prompt", 50, 0.5)
+
+
+@pytest.mark.asyncio
+async def test_groq_error_handling_and_normalization():
+    """Verify Groq API handles 429, 500, timeout, and empty content safely."""
+    settings = ProviderSettings(
+        mode=ProviderMode.LIVE,
+        inference_provider=InferenceProviderType.GROQ,
+        groq_api_key="groq-secret-test-key",
+    )
+
+    # 1. 429 Rate Limit
+    p_429 = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(429, headers={"Retry-After": "5"}))),
+    )
+    with pytest.raises(ProviderRateLimitError) as exc_429:
+        await p_429.generate("prompt", 50, 0.5)
+    assert exc_429.value.retry_after_seconds == 5.0
+    assert "groq-secret-test-key" not in str(exc_429.value)
+
+    # 2. 503 Upstream Error
+    p_503 = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503, text="Service Unavailable"))),
+    )
+    with pytest.raises(ProviderUpstreamError):
+        await p_503.generate("prompt", 50, 0.5)
+
+    # 3. Empty Content
+    p_empty = ConfiguredInferenceProvider(
+        settings=settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(
+            200, json={"choices": [{"message": {"content": "   "}}]}
+        ))),
+    )
+    with pytest.raises(ProviderResponseInvalidError):
+        await p_empty.generate("prompt", 50, 0.5)
+
+
+@pytest.mark.asyncio
+async def test_live_mode_never_falls_back_to_fake_silently():
+    """Live mode must fail closed with ProviderConfigurationError if credentials missing; no fake fallback."""
+    settings = ProviderSettings(
+        mode=ProviderMode.LIVE,
+        inference_provider=InferenceProviderType.GEMINI,
+        gemini_api_key="",
+    )
+    provider = ConfiguredInferenceProvider(settings=settings)
+
+    with pytest.raises(ProviderConfigurationError):
+        await provider.generate("test prompt", 50, 0.5)
+
+
+@pytest.mark.asyncio
+async def test_inference_seller_service_with_gemini_and_groq_end_to_end():
+    """Verify InferenceSellerService executes complete lifecycle with Gemini and Groq providers."""
+    # 1. Gemini Lifecycle
+    gemini_settings = ProviderSettings(
+        mode=ProviderMode.LIVE,
+        inference_provider=InferenceProviderType.GEMINI,
+        gemini_api_key="gemini-key-ok",
+    )
+    mock_gemini_json = {
+        "candidates": [
+            {
+                "content": {"parts": [{"text": "Gemini synthesis response content"}], "role": "model"},
+                "finishReason": "STOP",
+            }
+        ],
+        "usageMetadata": {"promptTokenCount": 5, "candidatesTokenCount": 8, "totalTokenCount": 13},
+        "modelVersion": "gemini-2.5-flash",
+    }
+    p_gemini = ConfiguredInferenceProvider(
+        settings=gemini_settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=mock_gemini_json))),
+    )
+    service_gemini = InferenceSellerService(provider=p_gemini)
+    ctx = SellerExecutionContext(service_id="inference_001")
+    output_gemini, metrics_gemini = await service_gemini.execute_lifecycle(
+        InferenceSellerInput(prompt="Test prompt", max_tokens=100), context=ctx
+    )
+    assert output_gemini.response == "Gemini synthesis response content"
+    assert output_gemini.model_used == "gemini-2.5-flash"
+    assert output_gemini.tokens_generated == 8
+    assert metrics_gemini.success is True
+
+    # 2. Groq Lifecycle
+    groq_settings = ProviderSettings(
+        mode=ProviderMode.LIVE,
+        inference_provider=InferenceProviderType.GROQ,
+        groq_api_key="groq-key-ok",
+    )
+    mock_groq_json = {
+        "model": "llama-3.3-70b-versatile",
+        "choices": [{"message": {"role": "assistant", "content": "Groq synthesis response content"}}],
+        "usage": {"completion_tokens": 12, "total_tokens": 20},
+    }
+    p_groq = ConfiguredInferenceProvider(
+        settings=groq_settings,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=mock_groq_json))),
+    )
+    service_groq = InferenceSellerService(provider=p_groq)
+    output_groq, metrics_groq = await service_groq.execute_lifecycle(
+        InferenceSellerInput(prompt="Test prompt", max_tokens=100), context=ctx
+    )
+    assert output_groq.response == "Groq synthesis response content"
+    assert output_groq.model_used == "llama-3.3-70b-versatile"
+    assert output_groq.tokens_generated == 12
+    assert metrics_groq.success is True

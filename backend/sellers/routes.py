@@ -557,6 +557,11 @@ async def _verify_and_execute_seller(
     try:
         output, metrics = await service.execute_lifecycle(payload, context=context)
     except Exception as exc:
+        if settlement_proof:
+            logger.warning(
+                "Seller execution failed after payment settlement confirmed (service=%s, req=%s, proof=%s): %s",
+                service_id, context.request_id, settlement_proof, exc
+            )
         return _handle_seller_exception(exc, service_id=service_id, request_id=context.request_id)
 
     # 5. Formulate Success Response with Verified Settlement Evidence (Dual-Header)
