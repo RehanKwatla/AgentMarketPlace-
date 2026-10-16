@@ -46,6 +46,18 @@ def test_ledger_insertion_and_query(client):
 
 
 def test_reputation_metrics_computation(client):
+    record = LedgerRecordSchema(
+        request_id="req_test_rep_001",
+        buyer_id="buyer_001",
+        seller_id="seller_001",
+        service_id="data_001",
+        listed_price="0.002",
+        amount_paid="0.002",
+        tx_hash="0xabcd1234ef",
+        status=LedgerStatus.PAID,
+        latency_ms=150.0
+    )
+    ledger_repo.record_transaction(record)
     calc = ReputationCalculator(ledger_repo)
     metrics = calc.calculate_for_service("data_001")
     assert metrics.service_id == "data_001"

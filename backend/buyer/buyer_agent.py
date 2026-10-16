@@ -1,8 +1,8 @@
 """Phase 3 Multi-Hop Tool-Calling Autonomous Buyer Agent.
 
 Interfaces directly with Member 1's BuyerPaymentClientInterface and handles
-official x402 headers (X-402-Requirement, X-402-Payment-Payload, X-402-Settlement-Proof)
-for multi-hop tool-calling flows across Data, Scraping, and Inference services.
+application compatibility headers (X-402-Requirement, X-402-Payment-Payload, X-402-Settlement-Proof)
+alongside standard x402 wire protocol headers for multi-hop tool-calling flows across Data, Scraping, and Inference services.
 """
 import json
 import logging
@@ -225,14 +225,14 @@ class BuyerAgent:
         task_id: Optional[str] = None,
         step_id: int = 1,
     ) -> ServiceCallRecord:
-        """Direct invocation of a single registered seller tool through the official x402 lifecycle.
+        """Direct invocation of a single registered seller tool through the x402 lifecycle.
 
         Handles:
-          1. Initial request -> seller emits HTTP 402 with X-402-Requirement.
+          1. Initial request -> seller emits HTTP 402 challenge (PAYMENT-REQUIRED or X-402-Requirement).
           2. Policy verification via Member 1 verifier.
           3. Payment authorization creation via BuyerPaymentClientInterface.
-          4. Re-request with X-402-Payment-Payload and Idempotency-Key.
-          5. Settlement verification via BuyerPaymentClientInterface from X-402-Settlement-Proof.
+          4. Re-request with payment authorization headers (PAYMENT-SIGNATURE / X-402-Payment-Payload) and Idempotency-Key.
+          5. Settlement verification via BuyerPaymentClientInterface from settlement proof headers (PAYMENT-RESPONSE / X-402-Settlement-Proof).
           6. Draft-7 output schema validation.
           7. Atomic budget commit/release.
         """

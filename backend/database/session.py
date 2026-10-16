@@ -31,6 +31,29 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+from sqlalchemy import text
+
+
 def init_db() -> None:
-    """Create all registered database tables."""
+    """Create all registered database tables and apply lightweight migrations if needed."""
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            # Check if ledger_records table exists and needs added columns
+            res = conn.execute(text("PRAGMA table_info(ledger_records)"))
+            cols = {row[1] for row in res.fetchall()}
+            if cols:
+                if "payment_id" not in cols:
+                    conn.execute(text("ALTER TABLE ledger_records ADD COLUMN payment_id VARCHAR(64)"))
+                if "listed_price_units" not in cols:
+                    conn.execute(text("ALTER TABLE ledger_records ADD COLUMN listed_price_units INTEGER"))
+                if "amount_paid_units" not in cols:
+                    conn.execute(text("ALTER TABLE ledger_records ADD COLUMN amount_paid_units INTEGER"))
+                if "network" not in cols:
+                    conn.execute(text("ALTER TABLE ledger_records ADD COLUMN network VARCHAR(64)"))
+                if "token" not in cols:
+                    conn.execute(text("ALTER TABLE ledger_records ADD COLUMN token VARCHAR(64)"))
+                conn.commit()
+    except Exception:
+        pass
+

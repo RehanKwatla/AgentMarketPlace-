@@ -2,7 +2,11 @@
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, Boolean
 from backend.database.session import Base
-from backend.shared.constants import LedgerStatus
+from backend.shared.constants import (
+    LedgerStatus,
+    NETWORK_BASE_SEPOLIA,
+    USDC_BASE_SEPOLIA,
+)
 
 
 class LedgerRecordModel(Base):
@@ -11,16 +15,40 @@ class LedgerRecordModel(Base):
 
     request_id = Column(String(64), primary_key=True, index=True)
     task_id = Column(String(64), index=True, nullable=True)
+    payment_id = Column(String(64), index=True, nullable=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     buyer_id = Column(String(64), nullable=False, index=True)
     seller_id = Column(String(64), nullable=False, index=True)
     service_id = Column(String(64), nullable=False, index=True)
     listed_price = Column(String(32), nullable=False)
     amount_paid = Column(String(32), nullable=False)
+    listed_price_units = Column(Integer, nullable=True)
+    amount_paid_units = Column(Integer, nullable=True)
+    network = Column(String(64), nullable=True, default=NETWORK_BASE_SEPOLIA)
+    token = Column(String(64), nullable=True, default=USDC_BASE_SEPOLIA)
     tx_hash = Column(String(128), nullable=True, index=True)
     status = Column(String(32), nullable=False, index=True)
     latency_ms = Column(Float, nullable=False, default=0.0)
     error_reason = Column(Text, nullable=True)
+
+
+class SellerReputationModel(Base):
+    """Persistent aggregated telemetry and reputation scores for sellers."""
+    __tablename__ = "seller_reputation"
+
+    service_id = Column(String(64), primary_key=True, index=True)
+    total_calls = Column(Integer, default=0, nullable=False)
+    successful_calls = Column(Integer, default=0, nullable=False)
+    success_rate = Column(Float, default=1.0, nullable=False)
+    median_latency_ms = Column(Float, default=0.0, nullable=False)
+    failure_counts = Column(Integer, default=0, nullable=False)
+    schema_invalid_counts = Column(Integer, default=0, nullable=False)
+    reputation_score = Column(Float, default=100.0, nullable=False)
+    total_volume_units = Column(Integer, default=0, nullable=False)
+    total_volume_usdc = Column(String(32), default="0.000000", nullable=False)
+    sync_status = Column(String(32), default="synced", nullable=False)
+    last_error = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class ServiceRecordModel(Base):

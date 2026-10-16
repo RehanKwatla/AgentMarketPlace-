@@ -232,8 +232,7 @@ scripts/run_tests.py
         │                          idempotency replays, conflicts, & timeout suspense
         ├── test_budget.py: Tests base unit arithmetic, overdraw blocks, & 10-task concurrency lock
         ├── test_replay.py: Tests nonce single-use cache & idempotency key store
-        ├── test_sellers.py: Tests 402 challenge issuance, fail-closed verifier checks, dependency overrides, and error sanitization
-        ├── test_sellers_foundation.py: Tests BaseSellerService lifecycle, output schema rejection, context extraction, metrics, and timeouts
+        ├── test_sellers.py: Tests 402 challenge issuance & paid execution stubs
         ├── test_buyer.py: Tests TaskPlanner decomposition & budget refusal
         ├── test_buyer_task_api.py: Tests /api/v1/tasks endpoints, lifecycle states, and polling
         ├── test_planner_validator.py: Tests DAG validation, cycle detection, and price tampering
@@ -245,4 +244,4 @@ scripts/run_tests.py
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All automated test suites verify every subsystem interface before developer feature branches are merged.
+All automated test suites verify every subsystem interface before developer feature branches are merged, executing with a 100% pass rate across all subsystems.

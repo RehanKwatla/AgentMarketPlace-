@@ -8,6 +8,7 @@ from backend.shared.constants import (
     usdc_to_base_units,
     base_units_to_usdc,
 )
+from backend.shared.schemas import CapabilityMetadata
 
 
 class ServiceReputationSummary(BaseModel):
@@ -45,6 +46,10 @@ class ServiceRecord(BaseModel):
     token: Optional[str] = Field(default=None, description="Alias for asset_address")
     pay_to_address: Optional[str] = Field(default=None, description="Alias for pay_to")
     capability: Optional[str] = Field(default=None, description="Primary capability URI")
+    capability_metadata: Optional[CapabilityMetadata] = Field(
+        default=None,
+        description="Detailed capability profile and execution constraints",
+    )
     reputation: Optional[ServiceReputationSummary] = Field(default_factory=ServiceReputationSummary)
 
     @model_validator(mode="before")
@@ -146,3 +151,7 @@ class ServiceRegistrationRequest(BaseModel):
     input_schema: Dict[str, Any]
     output_schema: Dict[str, Any]
     enabled: bool = Field(default=True)
+    capability_metadata: Optional[CapabilityMetadata] = Field(
+        default=None,
+        description="Optional capability profile and execution constraints",
+    )

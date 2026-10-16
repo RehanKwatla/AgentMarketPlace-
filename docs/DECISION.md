@@ -154,59 +154,135 @@ Frontend single-page applications (SPAs) bundle JavaScript that is readable by a
 
 ---
 
-## Decision 9: Fail-Closed Verifier Receipt Verification & Public Error Sanitization
+## Decision 9: Separation of Task Creation from Payment Execution & Model Alignment
 
 ### 1. Context & Problem
-In an open payment-gated microservice environment, two edge failure modes exist:
-1. A payment verifier might return a falsy/`None` result instead of raising an exception, which if unchecked would allow unauthenticated execution of seller business logic.
-2. An unexpected seller crash (e.g., database connection failure, downstream API crash) might leak database passwords, internal URLs, or credentials if raw exception strings are returned to external clients.
+Premature payment execution upon task submission violates the principle of least privilege and atomic budgeting. If task parsing fails or budget constraints are violated during decomposition, any upfront payment is lost or requires complex refund reconciliation. Furthermore, multiple team members creating independent database tables leads to schema collisions.
 
 ### 2. Theory & Logic
-- **Fail-Closed Security Posture:** Any ambiguous or empty payment verification outcome MUST be treated as an explicit authorization denial (`HTTP 402 Payment Required`). Business logic must never execute without concrete settlement receipt evidence.
-- **Defensive Error Sanitization:** Internal exceptions (`SellerExecutionError`) must log full diagnostic stack traces server-side while emitting sanitized, opaque error messages to clients to prevent secret leakage.
+- **Decoupled Planning vs. Execution:** Creating a task (`POST /api/v1/tasks`) with `execute_now: false` admits the request, verifies input syntax, converts budget to integer USDC atomic units without floats, and sets status to `accepted`.
+- **Member 4 Model Alignment:** Uses Member 4's single source of truth `TaskRecordModel` via SQLAlchemy ORM rather than introducing conflicting buyer tables.
+- **Verification Gates:** A task cannot reach `completed` until the service outputs pass strict Draft-7 JSON schema validation against the registered seller schema. If output fails, the task state transitions to `refused` or `failed` with zero funds committed for non-conforming responses.
 
 ### 3. How It Works
-- `backend/sellers/routes.py` checks `if receipt is None:` immediately after calling `verifier.verify_and_settle()`, failing closed with HTTP 402 and `PAYMENT_AUTHORIZATION_FAILED`.
-- `_handle_seller_exception` maps `SellerExecutionError` to HTTP 500 with a static sanitized message (`"Internal execution error occurred within seller logic."`), verified by `test_seller_route_internal_exception_sanitization`.
+- `TaskRepository` persists task state to `TaskRecordModel`.
+- `BuyerService` coordinates atomic budget reservation with Member 1's `BudgetManager`.
+- Provenance and purchase explanation records capture all seller receipts and tx hashes transparently.
 
 ---
 
-## Decision 10: Server-Side Request Forgery (SSRF) Defense-in-Depth for Scraping Seller
+## Decision 10: Deterministic-First DAG Planner, Hard Eligibility Gating, and Pre-Payment Plan Validation
 
 ### 1. Context & Problem
-The scraping seller (`scraping_001`) receives arbitrary client-supplied URLs to extract web content. Malicious buyers could supply `http://localhost`, `http://127.0.0.1`, `http://169.254.169.254` (cloud metadata IP), or internal private LAN IPs (`10.x.x.x`, `192.168.x.x`), turning the seller microservice into an SSRF proxy to steal cloud credentials or compromise backend infrastructure.
+In agentic commerce systems, planning without validation leads to hallucinated endpoints, budget overruns, cycles in execution graphs, and payment commitments for invalid or disabled services. Allowing a candidate's high reputation or low price to override a safety failure introduces critical vulnerabilities.
 
 ### 2. Theory & Logic
-- **Pre-Execution Input Boundary:** Scraping requests must be validated before expensive processing or payment settlement.
-- **Strict Protocol & Host Restriction:** Only `http` and `https` schemes are permitted. Hostnames are checked against loopback, link-local, cloud metadata, multicast, and RFC 1918 private CIDR blocks using Python's `ipaddress` library and canonical domain filters (`.local`, `.internal`, `.localhost`).
-- **Bounded Payloads:** Both request URLs (max 2048 chars) and extracted response content (max 50,000 chars) are strictly bounded to prevent memory exhaustion and DoS.
+- **Hard Eligibility Gating (Gated Ranking):** A candidate service is never ranked unless it passes ALL hard eligibility gates first: active/enabled status, trusted registry origin, valid 42-char hex `pay_to` address, Base Sepolia network (`eip155:84532`), Base Sepolia USDC token (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`), positive atomic price within budget, and valid Draft-7 input/output schemas. A high ranking never overrides an eligibility check.
+- **Explicit DAG Architecture:** Multi-step workflows requiring Scraping, Data, and Inference are modeled as explicit Directed Acyclic Graphs (DAGs) partitioned into topological execution stages. Independent tasks (e.g. Scraping and Data) execute in parallel in Stage 0, while dependent tasks (e.g. Inference summarizing upstream data) execute in Stage 1.
+- **Authoritative Price Enforcement:** All prices, recipient addresses, and endpoints are resolved strictly from server-side registry records. Any client-provided prices or payment parameters are discarded.
+- **Worst-Case Pre-Computation:** Calculates worst-case total cost, including permitted fallbacks and allowances, before any paid call or budget reservation.
+- **Zero Payments on Plan Rejection:** If a plan contains missing dependencies, cycles, schema mismatches, duplicate calls, unsafe concurrency, or exceeds budget, it is rejected immediately and transitions to `refused` before any payment interface is invoked.
 
 ### 3. How It Works
-- `ScrapingSellerInput` in `backend/sellers/schemas.py` validates URLs via `validate_url` classmethod, raising `ValueError` (resulting in HTTP 422) whenever a forbidden destination is supplied.
-- Tested and verified by `test_ssrf_protection_blocks_private_and_loopback_destinations` in `backend/tests/test_sellers_payment_integration.py`.
+- `ServiceSelector.check_eligibility()` filters candidates, and `rank_candidates()` scores remaining eligible candidates via multi-attribute utility (relevance 30%, reputation 35%, price 25%, latency 10%).
+- `TaskPlanner.create_plan()` generates an `ExecutionPlan` with dependency graph, topological stages, expected and worst-case cost, fallback allowances, and selection reasons.
+- `PlanValidator.validate_plan()` rigorously checks DAG acyclicity, schema compliance via `Draft7Validator`, authoritative server-side registry resolution, and concurrency limits.
 
 ---
 
-## Decision 11: Decoupling Settlement Verification Proof from Seller Execution Failure Handling
+## Decision 11: End-to-End Orchestration Integration with Member 1 Payments & Member 4 Persistence
 
 ### 1. Context & Problem
-Payment settlement and seller business execution are distinct failure domains. If a client submits a valid payment that settles with the facilitator/on-chain, but the seller service subsequently times out (HTTP 504), produces invalid output (HTTP 502), or crashes (HTTP 500):
-1. Should the seller fabricate a synthetic receipt? (Never).
-2. Should the seller return `X-402-Settlement-Proof` on error responses? (No, attaching settlement proof on 5xx codes confuses client payment engines into assuming successful delivery).
-3. How is the payment state preserved? The authoritative payment engine and ledger record the settled transaction as `paid` or `paid output rejected`, ensuring buyer funds and reputation scores are accounted for without corrupting HTTP transport semantics.
+The Buyer agent cannot operate in a silo. Every paid invocation must interface with Member 1's payment engine (`BuyerPaymentClientInterface`, `PaymentPolicyVerifier`, `BudgetManager`, `SettlementVerifier`) and record immutable transaction history in Member 4's ledger repository (`ledger_repo` and SQLAlchemy `LedgerRecordModel`). Crucially:
+1. The buyer module must never sign transactions directly or implement competing replay protection.
+2. Concurrent eligible calls ($\ge 3$) must be supported without exceeding budget.
+3. Network timeouts or missing settlement proofs after dispatching payment payloads introduce settlement uncertainty; blind retries could result in double-spending.
 
 ### 2. Theory & Logic
-- **Transport Semantics vs Ledger Accounting:** HTTP error responses (500, 502, 504) represent service delivery failures and must never attach a settlement proof header or fabricate random UUID receipts (`receipt_<random_uuid>`).
-- **Zero Fabrication Rule:** Settlement proof is attached ONLY to HTTP 200 responses, containing the verbatim transaction hash or facilitator receipt ID returned by the authentic payment verifier.
+- **Delegated Cryptographic Authorization:** The buyer layer (`BuyerService`) never handles private keys or signs transactions directly. Instead, it delegates payload creation to `BuyerPaymentClientInterface.create_payment_payload` and settlement verification to `BuyerPaymentClientInterface.verify_settlement`.
+- **Atomic Concurrency Bounding:** `BudgetManager.reserve_budget` locks funds under an `asyncio.Lock` prior to challenge negotiation. Concurrent stage calls are bounded by an `asyncio.Semaphore(3)` and grouped topologically so that independent calls run simultaneously without race conditions.
+- **Strict Settlement Evidence Gates:** Calls are marked `PAID` *only* if the seller returns verified settlement evidence (facilitator receipt or on-chain tx hash). If the seller returns HTTP 200 without valid settlement evidence, or if the network times out *after* payment authorization was dispatched, the call immediately transitions to `PENDING_RECONCILIATION`. The reserved budget is retained (never refunded or double-spent) until an explicit reconciliation process resolves the on-chain status.
+- **Member 4 Persistence Synchronization:** Every call status transition (`paid`, `paid output rejected`, `refused`, `failed and not charged`, `pending reconciliation`) is recorded to Member 4's `ledger_repo` with deterministic call IDs (`call_{task_id[:8]}_step{step_id}_{service_id}`) and idempotency keys (`idem_{task_id}_{step_id}_{service_id}`).
 
 ### 3. How It Works
-- `backend/sellers/routes.py` extracts `proof` from `SettlementReceipt` and checks that it is a non-empty, genuine string.
-- If seller execution fails, `_handle_seller_exception` emits the standard HTTP error status without settlement proof headers.
-- Verified by unit tests `test_confirmed_payment_followed_by_seller_timeout_leaves_no_fake_proof` and `test_confirmed_payment_followed_by_invalid_seller_output_fails_closed_502`.
+- `BuyerPaymentClient` implements `BuyerPaymentClientInterface` by integrating with `PaymentPolicyVerifier`, `SettlementVerifier`, and `web3`.
+- `BuyerService._execute_call()` coordinates the sequence:
+  1. Reserve budget atomically via `BudgetManager`.
+  2. Send initial HTTP request to seller endpoint; receive 402 challenge.
+  3. Validate challenge against `PaymentPolicyVerifier`.
+  4. Obtain signed payload from `BuyerPaymentClient`.
+  5. Dispatch payload in `X-402-Payment-Payload` header.
+  6. Catch post-dispatch timeouts and missing settlement proofs -> `PENDING_RECONCILIATION`.
+  7. On verified settlement proof -> `PAID`, validate output schema; commit budget.
+  8. Synchronously record call in `TaskRecordModel` and Member 4's `ledger_repo`.
 
 ---
 
-## Decision 12: Dual Package Namespace Compatibility (`backend/payments/` & `backend/app/payments/`)
+## Decision 12: Dependency-Aware Asynchronous Execution, Strict Input Isolation, & Safe Fallbacks
+
+### 1. Context & Problem
+In complex agent workflows requiring Data (`data.lookup.v1`), Scraping (`scraping.extract.v1`), and Inference (`inference.summarize.v1`), naïve execution creates several failure modes:
+1. Running dependent calls before upstream outputs exist causes runtime failures.
+2. If an upstream dependency fails, executing downstream calls wastes payments on unfulfillable requests.
+3. Sending unvalidated or extraneous metadata to sellers violates API contracts.
+4. Starting a fallback service when the primary call had an uncertain settlement risks double-spending.
+5. Starting a fallback whose price exceeds the remaining budget causes financial overruns.
+
+### 2. Theory & Logic
+- **Topological & Dependency Gating:** Stage 0 executes independent calls (Data & Scraping) concurrently bounded by `asyncio.Semaphore(3)`. Stage 1 (Inference) depends on Stage 0. Prior to reserving budget or executing a dependent call, the buyer checks that all upstream dependencies succeeded (`CallStatus.SUCCEEDED`) and produced valid outputs. If any upstream dependency failed or was not charged, the dependent call is automatically skipped (`FAILED_AND_NOT_CHARGED`) with zero funds spent.
+- **Strict Input Isolation:** Each seller receives only the validated fields defined by Member 2's contracts:
+  - Data seller: `DataSellerInput(symbol=...)`
+  - Scraping seller: `ScrapingSellerInput(url=...)`
+  - Inference seller: `InferenceSellerInput(prompt=..., max_tokens=..., temperature=...)`
+  When Inference depends on upstream calls, its `prompt` is synthesized strictly from validated upstream outputs (e.g. market rates and extracted text).
+- **Two-Phase Fallback Safety:**
+  - Fallbacks are **STRICTLY FORBIDDEN** if the primary call resulted in an uncertain payment outcome (`PENDING_RECONCILIATION`), as the payment may settle on-chain.
+  - If the primary call failed with a clean non-payment error (`FAILED_AND_NOT_CHARGED`), the budget reservation is released, and the fallback's price is checked against `budget_mgr.available_budget`. If the fallback price exceeds available funds, it is rejected and not executed.
+- **Member 4 Audit Completeness:** All call records store explicit `step_id`, `depends_on`, `service_id`, `amount_paid`, and `tx_hash` synchronized with Member 4's `ledger_repo` and SQL `LedgerRecordModel`.
+
+---
+
+## Decision 13: Seller-Output Schema Validation, Transparent Aggregation, & Field-Level Provenance
+
+### 1. Context & Problem
+In a decentralized pay-per-call agent economy, sellers may return responses with invalid content types (e.g. `text/html` error pages), malformed JSON, missing required fields, or type mismatches. If the buyer agent naively aggregates these responses or hallucinates missing data, downstream users receive corrupt findings. Furthermore, when a micropayment has already settled on-chain (`tx_hash` or facilitator receipt verified) but the delivered output is invalid, the buyer cannot silently erase the cost or claim the call was free; nor can it report the failure as a successful finding.
+
+### 2. Theory & Logic
+- **Rigorous Draft-7 Schema Validation:** `OutputValidator` validates raw responses against the exact Draft-7 output JSON Schema registered for the seller version. Rejections explicitly check Content-Type headers (`application/json`), parse malformed JSON, verify top-level dictionaries, and detail missing required fields and type errors.
+- **Irrevocable Cost Accounting (`PAID_OUTPUT_REJECTED`):** When payment is verified by Member 1's `SettlementVerifier` but schema validation fails, the status is set to `CallStatus.PAID_OUTPUT_REJECTED` (matching Member 4's `LedgerStatus.PAID_OUTPUT_REJECTED`). The on-chain `tx_hash` and `amount_paid_usdc` are permanently preserved in the ledger and task record. The money was spent, and the seller's reputation score is penalized for non-compliance.
+- **Zero-Hallucination Result Aggregation:** `ResultAggregator` aggregates ONLY validated outputs from `CallStatus.SUCCEEDED` calls into `market_data`, `web_sources`, and `summary`. Rejected outputs are quarantined in `rejected_outputs`, while execution failures and unverified payments are quarantined in `failed_calls`. Under no circumstances are synthetic facts invented to replace missing data.
+- **Deterministic Field-Level & Result-Level Provenance:** Every aggregated finding in `market_data` and `summary` is explicitly linked in a `provenance` record specifying: `target_field`, `service_id`, `call_id`, `step_id`, `category`, `schema_version`, `timestamp`, `payment_reference`, and `validation_status: "valid"`.
+- **Transparent Execution Disclosures:** When outputs are rejected or calls fail, transparent disclosure notices are appended to the user-facing summary detailing the producing service ID and schema error reason.
+
+---
+
+## Decision 14: Authoritative Ledger Reconciliation, Itemized Spending Summaries, & Non-Fabricated Explorer Links
+
+### 1. Context & Problem
+In agent marketplaces, users and auditors require transparent explanations of every micropayment. If the buyer agent derives verified spending from local in-memory counters or planned prices, discrepancies emerge between the buyer's reported total and Member 4's authoritative audit ledger. Furthermore, generating fake or illustrative explorer links for non-hash tokens or unsettled calls misleads users and undermines trust.
+
+### 2. Theory & Logic
+- **Authoritative Ledger Reconciliation:** `ExplanationGenerator` queries Member 4's `ledger_repo` for every service call record. Verified spending is calculated exclusively from ledger records with verified settlement proofs (`tx_hash` / facilitator receipt) in terminal states (`paid` or `paid output rejected`).
+- **Missing & Ambiguous Ledger Isolation:**
+  - If a ledger entry is missing, it is NOT counted in verified spending; a warning is recorded.
+  - If a call is in `pending reconciliation` or lacks on-chain confirmation, its amount is quarantined under `uncertain_pending_usdc` and subtracted from available remaining budget, but never presented as verified spend.
+- **Seven-Part Itemized Spending Accounting:** Pure integer base-unit arithmetic guarantees exact precision across:
+  1. `budget_allocated_usdc`: Initial budget allocation.
+  2. `estimated_cost_usdc`: Pre-execution planned cost ceiling.
+  3. `verified_spent_usdc`: Sum of verified on-chain settled payments from ledger.
+  4. `reserved_budget_usdc`: Funds held for pending reconciliations.
+  5. `uncertain_pending_usdc`: Ambiguous amounts awaiting on-chain resolution.
+  6. `refunded_amount_usdc`: Released unspent funds returned to buyer.
+  7. `remaining_budget_usdc`: Available unspent funds (`budget - verified_spent - uncertain_pending`).
+- **Strict Explorer Link Validation (Zero Fabrication):** Base Sepolia explorer links (`https://sepolia.basescan.org/tx/{tx_hash}`) are generated strictly when a verified 66-character hex hash starting with `0x` is present. Placeholder tokens, mock strings, or receipts return `None`.
+- **Fact-Based Service Selection Explanations:** Explanations cite actual registry reputation scores and median latencies when verified call history exists; when a service has no history, the narrative explicitly states `"No prior reputation history in ledger"` without hallucinating scores.
+
+
+
+
+---
+
+## Decision 13: Dual Package Namespace Compatibility (`backend/payments/` & `backend/app/payments/`)
 
 ### 1. Context & Problem
 The root implementation plan specified `backend/app/payments/` while the existing repository codebase placed payment modules at `backend/payments/`, imported extensively across `main.py`, `buyer_agent.py`, and the test suite. Breaking existing import paths would invalidate tests and team coordination.
@@ -222,7 +298,7 @@ The root implementation plan specified `backend/app/payments/` while the existin
 
 ---
 
-## Decision 13: Five-State Payment Lifecycle with Suspense (`pending reconciliation`)
+## Decision 14: Five-State Payment Lifecycle with Suspense (`pending reconciliation`)
 
 ### 1. Context & Problem
 If an HTTP client transmits an EIP-712 payment authorization to a seller and a network timeout occurs before receiving the HTTP response, the payment may have successfully settled on-chain. Marking this immediately as `failed and not charged` and releasing the budget would cause double-spending or financial unaccountability.
@@ -239,7 +315,7 @@ If an HTTP client transmits an EIP-712 payment authorization to a seller and a n
 
 ---
 
-## Decision 14: Decoupled x402 Adapter with Strict Fail-Closed Live Signing and Test-Only Fallback
+## Decision 15: Decoupled x402 Adapter with Strict Fail-Closed Live Signing and Test-Only Fallback
 
 ### 1. Context & Problem
 Running automated tests on developer machines or offline CI pipelines without Base Sepolia RPC credentials or gas funds must pass reliably, but live payment execution must never fabricate signatures or proceed without authentic cryptographic keys.
@@ -255,7 +331,7 @@ Running automated tests on developer machines or offline CI pipelines without Ba
 
 ---
 
-## Decision 15: Canonical SHA-256 Request Hashing for Idempotency Collision Prevention
+## Decision 16: Canonical SHA-256 Request Hashing for Idempotency Collision Prevention
 
 ### 1. Context & Problem
 A naive idempotency check only looks up the string `idempotency_key`. If a caller reuses the same key with a *different* service or request payload (either accidentally or maliciously), returning the cached result of the previous call leads to silent data corruption.
@@ -271,7 +347,7 @@ A naive idempotency check only looks up the string `idempotency_key`. If a calle
 
 ---
 
-## Decision 16: Suspense Ledger Isolation (Safe Non-Terminal Handling for Uncertain Payments)
+## Decision 17: Suspense Ledger Isolation (Safe Non-Terminal Handling for Uncertain Payments)
 
 ### 1. Context & Problem
 The shared `LedgerStatus` enum in `backend/shared/constants.py` defines only four terminal statuses (`paid`, `paid output rejected`, `refused`, `failed and not charged`). If a timed-out attempt (`pending reconciliation`) was written to the shared ledger as `refused`, an uncertain in-flight payment where funds may have settled on-chain would be recorded falsely as a terminal failure with zero funds paid.
@@ -288,7 +364,7 @@ The shared `LedgerStatus` enum in `backend/shared/constants.py` defines only fou
 
 ---
 
-## Decision 17: Dual-Header Support for Official x402 SDK & Application Interoperability
+## Decision 18: Dual-Header Support for Official x402 SDK & Application Interoperability
 
 ### 1. Context & Problem
 Official x402 SDK (v2.25.0) uses HTTP headers such as `PAYMENT-REQUIRED` (or `X-PAYMENT`), `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE` with Base64-encoded JSON payloads. Existing application sellers use `X-402-Requirement`, `X-402-Payment-Payload`, and `X-402-Settlement-Proof`. Dropping either breaks backward compatibility or official SDK clients.
@@ -303,7 +379,7 @@ The adapter must bridge both standards simultaneously without forcing unilateral
 
 ---
 
-## Decision 18: Strict 6-Point On-Chain Settlement Verification & ERC-20 Transfer Log Decoding
+## Decision 19: Strict 6-Point On-Chain Settlement Verification & ERC-20 Transfer Log Decoding
 
 ### 1. Context & Problem
 A transaction hash alone (`0x...`) or receipt status `0x1` does not prove payment settlement. A reverted transaction, a transaction on the wrong network, a transfer of a worthless custom token, or a transfer to the wrong recipient would all register as valid if only receipt existence was checked.
@@ -324,7 +400,7 @@ Settlement verification must enforce a comprehensive 6-point cryptographic and o
 
 ---
 
-## Decision 19: Durable Persistence Layer for Idempotency, Budget Locks, and Crash Recovery
+## Decision 20: Durable Persistence Layer for Idempotency, Budget Locks, and Crash Recovery
 
 ### 1. Context & Problem
 In-memory caches for idempotency, nonces, and budget reservations are wiped clean upon process restart, worker reload, or crash. This creates vulnerability to replay attacks, double spending, and lost in-flight reconciliations.
@@ -337,71 +413,55 @@ Payment attempts, nonces, and budget holds must be backed by durable database ta
 - `DurablePaymentRepository` persists attempts atomically and tracks reservation lifecycle (`reserved` -> `committed` / `released`).
 - `IdempotencyStore` falls back to querying the database when an idempotency key or nonce is not found in memory.
 - `PaymentService.get_pending_reconciliations()` hydrates suspense records from `payment_attempts` table on startup.
-
 ---
 
-## Decision 20: Deterministic-First DAG Planner, Hard Eligibility Gating, and Pre-Payment Plan Validation (Member 3)
+## Decision 21: Fail-Closed Verifier Receipt Verification & Public Error Sanitization
 
 ### 1. Context & Problem
-In agentic commerce systems, planning without validation leads to hallucinated endpoints, budget overruns, cycles in execution graphs, and payment commitments for invalid or disabled services.
+In an open payment-gated microservice environment, two edge failure modes exist:
+1. A payment verifier might return a falsy/`None` result instead of raising an exception, which if unchecked would allow unauthenticated execution of seller business logic.
+2. An unexpected seller crash (e.g., database connection failure, downstream API crash) might leak database passwords, internal URLs, or credentials if raw exception strings are returned to external clients.
 
 ### 2. Theory & Logic
-- **Hard Eligibility Gating:** A candidate service is never ranked unless it passes ALL hard eligibility gates first: active/enabled status, trusted registry origin, valid 42-char hex `pay_to` address, Base Sepolia network (`eip155:84532`), Base Sepolia USDC token (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`), positive atomic price within budget, and valid Draft-7 input/output schemas.
-- **Explicit DAG Architecture:** Multi-step workflows requiring Scraping, Data, and Inference are modeled as explicit Directed Acyclic Graphs (DAGs) partitioned into topological execution stages. Independent tasks execute in parallel in Stage 0, while dependent tasks execute in Stage 1.
-- **Authoritative Price Enforcement:** All prices, recipient addresses, and endpoints are resolved strictly from server-side registry records.
+- **Fail-Closed Security Posture:** Any ambiguous or empty payment verification outcome MUST be treated as an explicit authorization denial (`HTTP 402 Payment Required`). Business logic must never execute without concrete settlement receipt evidence.
+- **Defensive Error Sanitization:** Internal exceptions (`SellerExecutionError`) must log full diagnostic stack traces server-side while emitting sanitized, opaque error messages to clients to prevent secret leakage.
 
 ### 3. How It Works
-- `ServiceSelector.check_eligibility()` filters candidates, and `rank_candidates()` scores remaining eligible candidates via multi-attribute utility.
-- `TaskPlanner.create_plan()` generates an `ExecutionPlan` with dependency graph, topological stages, expected and worst-case cost, fallback allowances, and selection reasons.
-- `PlanValidator.validate_plan()` rigorously checks DAG acyclicity, schema compliance via `Draft7Validator`, authoritative server-side registry resolution, and concurrency limits.
+- `backend/sellers/routes.py` checks `if receipt is None:` immediately after calling `verifier.verify_and_settle()`, failing closed with HTTP 402 and `PAYMENT_AUTHORIZATION_FAILED`.
+- `_handle_seller_exception` maps `SellerExecutionError` to HTTP 500 with a static sanitized message (`"Internal execution error occurred within seller logic."`), verified by `test_seller_route_internal_exception_sanitization`.
 
 ---
 
-## Decision 21: End-to-End Buyer Orchestration Integration with Member 1 Payments & Member 4 Persistence (Member 3)
+## Decision 22: Server-Side Request Forgery (SSRF) Defense-in-Depth for Scraping Seller
 
 ### 1. Context & Problem
-The Buyer agent cannot operate in a silo. Every paid invocation must interface with Member 1's payment engine (`BuyerPaymentClientInterface`, `PaymentPolicyVerifier`, `BudgetManager`, `SettlementVerifier`) and record immutable transaction history in Member 4's ledger repository.
+The scraping seller (`scraping_001`) receives arbitrary client-supplied URLs to extract web content. Malicious buyers could supply `http://localhost`, `http://127.0.0.1`, `http://169.254.169.254` (cloud metadata IP), or internal private LAN IPs (`10.x.x.x`, `192.168.x.x`), turning the seller microservice into an SSRF proxy to steal cloud credentials or compromise backend infrastructure.
 
 ### 2. Theory & Logic
-- **Delegated Cryptographic Authorization:** The buyer layer (`BuyerService`) never handles private keys or signs transactions directly. Instead, it delegates payload creation to `BuyerPaymentClientInterface.create_payment_payload` and settlement verification to `BuyerPaymentClientInterface.verify_settlement`.
-- **Atomic Concurrency Bounding:** `BudgetManager.reserve_budget` locks funds under an `asyncio.Lock` prior to challenge negotiation. Concurrent stage calls are bounded by an `asyncio.Semaphore(3)`.
-- **Strict Settlement Evidence Gates:** Calls are marked `PAID` *only* if the seller returns verified settlement evidence (facilitator receipt or on-chain tx hash). If the seller returns HTTP 200 without valid settlement evidence, or if the network times out after payment authorization was dispatched, the call immediately transitions to `PENDING_RECONCILIATION`.
-- **Member 4 Persistence Synchronization:** Every call status transition (`paid`, `paid output rejected`, `refused`, `failed and not charged`, `pending reconciliation`) is recorded to Member 4's `ledger_repo`.
+- **Pre-Execution Input Boundary:** Scraping requests must be validated before expensive processing or payment settlement.
+- **Strict Protocol & Host Restriction:** Only `http` and `https` schemes are permitted. Hostnames are checked against loopback, link-local, cloud metadata, multicast, and RFC 1918 private CIDR blocks using Python's `ipaddress` library and canonical domain filters (`.local`, `.internal`, `.localhost`).
+- **Bounded Payloads:** Both request URLs (max 2048 chars) and extracted response content (max 50,000 chars) are strictly bounded to prevent memory exhaustion and DoS.
+
+### 3. How It Works
+- `ScrapingSellerInput` in `backend/sellers/schemas.py` validates URLs via `validate_url` classmethod, raising `ValueError` (resulting in HTTP 422) whenever a forbidden destination is supplied.
+- Tested and verified by `test_ssrf_protection_blocks_private_and_loopback_destinations` in `backend/tests/test_sellers_payment_integration.py`.
 
 ---
 
-## Decision 22: Dependency-Aware Asynchronous Execution, Strict Input Isolation, & Safe Fallbacks (Member 3)
+## Decision 23: Decoupling Settlement Verification Proof from Seller Execution Failure Handling
 
 ### 1. Context & Problem
-In complex agent workflows requiring Data, Scraping, and Inference, running dependent calls before upstream outputs exist causes runtime failures. If an upstream dependency fails, executing downstream calls wastes payments.
+Payment settlement and seller business execution are distinct failure domains. If a client submits a valid payment that settles with the facilitator/on-chain, but the seller service subsequently times out (HTTP 504), produces invalid output (HTTP 502), or crashes (HTTP 500):
+1. Should the seller fabricate a synthetic receipt? (Never).
+2. Should the seller return `X-402-Settlement-Proof` on error responses? (No, attaching settlement proof on 5xx codes confuses client payment engines into assuming successful delivery).
+3. How is the payment state preserved? The authoritative payment engine and ledger record the settled transaction as `paid` or `paid output rejected`, ensuring buyer funds and reputation scores are accounted for without corrupting HTTP transport semantics.
 
 ### 2. Theory & Logic
-- **Topological & Dependency Gating:** Stage 0 executes independent calls (Data & Scraping) concurrently bounded by `asyncio.Semaphore(3)`. Stage 1 (Inference) depends on Stage 0. Prior to reserving budget or executing a dependent call, the buyer checks that all upstream dependencies succeeded (`CallStatus.SUCCEEDED`) and produced valid outputs. If any upstream dependency failed, the dependent call is skipped (`FAILED_AND_NOT_CHARGED`) with zero funds spent.
-- **Strict Input Isolation:** Each seller receives only the validated fields defined by Member 2's contracts (`DataSellerInput`, `ScrapingSellerInput`, `InferenceSellerInput`).
-- **Two-Phase Fallback Safety:** Fallbacks are **STRICTLY FORBIDDEN** if the primary call resulted in an uncertain payment outcome (`PENDING_RECONCILIATION`). If the primary call failed with a clean non-payment error, the budget reservation is released, and the fallback price is checked against available budget before executing.
+- **Transport Semantics vs Ledger Accounting:** HTTP error responses (500, 502, 504) represent service delivery failures and must never attach a settlement proof header or fabricate random UUID receipts (`receipt_<random_uuid>`).
+- **Zero Fabrication Rule:** Settlement proof is attached ONLY to HTTP 200 responses, containing the verbatim transaction hash or facilitator receipt ID returned by the authentic payment verifier.
 
----
-
-## Decision 23: Seller-Output Schema Validation, Transparent Aggregation, & Field-Level Provenance (Member 3)
-
-### 1. Context & Problem
-In a decentralized pay-per-call agent economy, sellers may return responses with invalid content types or corrupted JSON. When micropayments settle on-chain but delivered outputs are invalid, the buyer cannot silently erase the cost or report failure as success.
-
-### 2. Theory & Logic
-- **Rigorous Draft-7 Schema Validation:** `OutputValidator` validates raw responses against the exact Draft-7 output JSON Schema registered for the seller version.
-- **Irrevocable Cost Accounting (`PAID_OUTPUT_REJECTED`):** When payment is verified by Member 1's `SettlementVerifier` but schema validation fails, the status is set to `CallStatus.PAID_OUTPUT_REJECTED`. The on-chain `tx_hash` and `amount_paid_usdc` are permanently preserved in the ledger and task record.
-- **Zero-Hallucination Result Aggregation:** `ResultAggregator` aggregates ONLY validated outputs from `CallStatus.SUCCEEDED` calls into `market_data`, `web_sources`, and `summary`.
-- **Deterministic Field-Level & Result-Level Provenance:** Every aggregated finding is explicitly linked in a `provenance` record specifying: `target_field`, `service_id`, `call_id`, `step_id`, `category`, `schema_version`, `timestamp`, `payment_reference`, and `validation_status: "valid"`.
-
----
-
-## Decision 24: Authoritative Ledger Reconciliation, Itemized Spending Summaries, & Non-Fabricated Explorer Links (Member 3)
-
-### 1. Context & Problem
-Users and auditors require transparent explanations of every micropayment. If the buyer agent derives verified spending from local in-memory counters or planned prices, discrepancies emerge between the buyer's reported total and Member 4's authoritative audit ledger.
-
-### 2. Theory & Logic
-- **Authoritative Ledger Reconciliation:** `ExplanationGenerator` queries Member 4's `ledger_repo` for every service call record. Verified spending is calculated exclusively from ledger records with verified settlement proofs in terminal states (`paid` or `paid output rejected`).
-- **Seven-Part Itemized Spending Accounting:** Pure integer base-unit arithmetic guarantees exact precision across `budget_allocated_usdc`, `estimated_cost_usdc`, `verified_spent_usdc`, `reserved_budget_usdc`, `uncertain_pending_usdc`, `refunded_amount_usdc`, and `remaining_budget_usdc`.
-- **Strict Explorer Link Validation (Zero Fabrication):** Base Sepolia explorer links (`https://sepolia.basescan.org/tx/{tx_hash}`) are generated strictly when a verified 66-character hex hash starting with `0x` is present. Placeholder tokens or mock strings return `None`.
+### 3. How It Works
+- `backend/sellers/routes.py` extracts `proof` from `SettlementReceipt` and checks that it is a non-empty, genuine string.
+- If seller execution fails, `_handle_seller_exception` emits the standard HTTP error status without settlement proof headers.
+- Verified by unit tests `test_confirmed_payment_followed_by_seller_timeout_leaves_no_fake_proof` and `test_confirmed_payment_followed_by_invalid_seller_output_fails_closed_502`.
 

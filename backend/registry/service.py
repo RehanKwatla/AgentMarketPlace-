@@ -8,6 +8,7 @@ from backend.shared.constants import (
     ServiceCategory,
     usdc_to_base_units,
 )
+from backend.shared.schemas import CapabilityMetadata
 from backend.registry.schemas import (
     ServiceRecord,
     ServiceListResponse,
@@ -66,6 +67,19 @@ class RegistryService:
                 is_active=True,
                 is_demo_seed=True,
                 registry_version="1.0.0",
+                capability_metadata=CapabilityMetadata(
+                    version="1.0.0",
+                    tags=["crypto", "market-data", "rates", "financial", "spot-prices"],
+                    supported_formats=["application/json"],
+                    max_payload_bytes=1024,
+                    rate_limit_per_minute=60,
+                    sla_latency_p95_ms=180,
+                    deterministic=True,
+                    constraints={
+                        "supported_symbols": ["ETH", "BTC", "SOL", "USDC"],
+                        "max_symbol_length": 10,
+                    },
+                ),
                 reputation=ServiceReputationSummary(
                     service_id="data_001",
                     reputation_score=98.5,
@@ -112,6 +126,20 @@ class RegistryService:
                 is_active=True,
                 is_demo_seed=True,
                 registry_version="1.0.0",
+                capability_metadata=CapabilityMetadata(
+                    version="1.0.0",
+                    tags=["web", "scraping", "markdown", "extraction", "content"],
+                    supported_formats=["text/html", "application/json"],
+                    max_payload_bytes=4096,
+                    rate_limit_per_minute=30,
+                    sla_latency_p95_ms=680,
+                    deterministic=False,
+                    constraints={
+                        "allowed_schemes": ["http", "https"],
+                        "max_url_length": 2048,
+                        "blocked_hosts": ["localhost", "127.0.0.1", "0.0.0.0"],
+                    },
+                ),
                 reputation=ServiceReputationSummary(
                     service_id="scraping_001",
                     reputation_score=96.0,
@@ -158,6 +186,20 @@ class RegistryService:
                 is_active=True,
                 is_demo_seed=True,
                 registry_version="1.0.0",
+                capability_metadata=CapabilityMetadata(
+                    version="1.0.0",
+                    tags=["llm", "inference", "reasoning", "summarization", "synthesis"],
+                    supported_formats=["text/plain", "application/json"],
+                    max_payload_bytes=8192,
+                    rate_limit_per_minute=20,
+                    sla_latency_p95_ms=890,
+                    deterministic=False,
+                    constraints={
+                        "max_prompt_length": 4000,
+                        "max_tokens_limit": 1000,
+                        "supported_models": ["mock-llm-v1", "gpt-3.5-turbo-equivalent"],
+                    },
+                ),
                 reputation=ServiceReputationSummary(
                     service_id="inference_001",
                     reputation_score=99.0,
@@ -273,6 +315,7 @@ class RegistryService:
             results = [
                 s for s in results
                 if any(cap_clean in c.lower() for c in s.capabilities)
+                or (s.capability_metadata and any(cap_clean in t.lower() for t in s.capability_metadata.tags))
             ]
 
         # 4. Filter by max price
@@ -295,6 +338,7 @@ class RegistryService:
                 or query in s.service_id.lower()
                 or query in s.category.value.lower()
                 or any(query in c.lower() for c in s.capabilities)
+                or (s.capability_metadata and any(query in t.lower() for t in s.capability_metadata.tags))
             ]
 
         total = len(results)

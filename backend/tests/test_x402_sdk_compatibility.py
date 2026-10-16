@@ -9,6 +9,11 @@ Validates:
 6. Fail-closed security boundaries on corrupted or invalid payloads.
 """
 import pytest
+
+x402 = pytest.importorskip("x402", reason="Official x402 SDK not installed")
+web3 = pytest.importorskip("web3", reason="web3 package not installed")
+eth_account = pytest.importorskip("eth_account", reason="eth_account package not installed")
+
 from eth_account import Account
 from eth_account.messages import encode_defunct
 
@@ -29,8 +34,6 @@ from backend.payments.x402_adapter import (
 )
 from backend.payments.errors import PaymentEngineError
 
-# Official SDK imports
-import x402
 from x402 import (
     PaymentRequired as OfficialPaymentRequired,
     PaymentRequirements as OfficialPaymentRequirements,
@@ -38,8 +41,6 @@ from x402 import (
     SettleResponse as OfficialSettleResponse,
 )
 import x402.http as x402_http
-import web3
-import eth_account
 
 
 def test_official_x402_dependencies_installed_and_versioned():

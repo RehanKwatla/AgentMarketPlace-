@@ -507,14 +507,22 @@ class BuyerService:
                 )
 
                 if resp_402.status_code == 402:
-                    req_header = resp_402.headers.get(HEADER_X402_REQUIREMENT)
-                    if not req_header:
-                        raise ValueError("Seller returned HTTP 402 without X-402-Requirement header.")
+                    # Step A: Parse requirement from official standard headers or custom compatibility headers
+                    req_obj = None
+                    try:
+                        from backend.payments.x402_adapter import x402_adapter
+                        req_obj = x402_adapter.parse_challenge_from_headers(resp_402.headers)
+                    except Exception:
+                        req_obj = None
 
-                    req_data = json.loads(req_header)
+                    if req_obj is None:
+                        req_header = resp_402.headers.get(HEADER_X402_REQUIREMENT)
+                        if not req_header:
+                            raise ValueError("Seller returned HTTP 402 without valid payment requirement header.")
+                        req_data = json.loads(req_header)
+                        req_obj = PaymentRequirement(**req_data)
 
                     # Step B: Policy verification via Member 1 PolicyVerifier
-                    req_obj = PaymentRequirement(**req_data)
                     try:
                         self.policy_verifier.verify(
                             requirement=req_obj,
@@ -531,20 +539,39 @@ class BuyerService:
                     )
                     payment_dispatched = True
 
-                    # Step D: Re-request with payment header
+                    # Step D: Re-request with dual compatibility payment headers
+                    outbound_headers = {
+                        HEADER_IDEMPOTENCY_KEY: idempotency_key,
+                        HEADER_X402_PAYMENT_PAYLOAD: json.dumps(payment_payload.model_dump())
+                    }
+                    try:
+                        from backend.payments.x402_adapter import x402_adapter
+                        extra_headers = x402_adapter.build_payment_headers(
+                            payment_payload=payment_payload.model_dump(),
+                            requirement=req_obj,
+                            idempotency_key=idempotency_key
+                        )
+                        outbound_headers.update(extra_headers)
+                    except Exception:
+                        pass
+
                     resp_paid = await client.post(
                         service.endpoint_url,
                         json=payload,
-                        headers={
-                            HEADER_IDEMPOTENCY_KEY: idempotency_key,
-                            HEADER_X402_PAYMENT_PAYLOAD: json.dumps(payment_payload.model_dump())
-                        }
+                        headers=outbound_headers
                     )
 
                     content_type = ""
                     if resp_paid.status_code == 200:
                         content_type = resp_paid.headers.get("content-type", "application/json")
-                        proof_header = resp_paid.headers.get(HEADER_X402_SETTLEMENT_PROOF)
+                        proof_header = None
+                        try:
+                            from backend.payments.x402_adapter import x402_adapter
+                            proof_header = x402_adapter.extract_settlement_proof(resp_paid.headers)
+                        except Exception:
+                            proof_header = None
+                        if not proof_header:
+                            proof_header = resp_paid.headers.get(HEADER_X402_SETTLEMENT_PROOF)
                         # Step E: Verify settlement proof via Member 1 SettlementVerifier
                         receipt = await self.payment_client.verify_settlement(proof_header)
                         if receipt and (receipt.tx_hash or receipt.facilitator_receipt_id):

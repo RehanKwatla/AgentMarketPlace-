@@ -1,16 +1,19 @@
 """Ledger and Reputation API Routes."""
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from backend.shared.schemas import (
     LedgerListResponse,
     LedgerRecordSchema,
     ReputationMetrics,
+    PaymentReconciliationInput,
+    ReconciliationResult,
 )
 from backend.ledger.models import ledger_repo
 from backend.ledger.reputation import ReputationCalculator
+from backend.ledger.reconciliation import reconciler
 
 router = APIRouter(tags=["Ledger & Reputation"])
-reputation_calc = ReputationCalculator(ledger_repo)
+reputation_calc = reconciler.reputation_calc
 
 
 @router.get(
@@ -49,6 +52,16 @@ async def get_ledger_record(request_id: str):
     return record
 
 
+@router.post(
+    "/api/v1/ledger/reconcile",
+    response_model=ReconciliationResult,
+    summary="Reconcile a payment execution and update ledger & reputation"
+)
+async def reconcile_payment(payload: PaymentReconciliationInput):
+    """Audits and reconciles a payment. Reaches PAID only upon verified settlement evidence."""
+    return await reconciler.reconcile_payment(payload)
+
+
 @router.get(
     "/api/v1/reputation",
     response_model=Dict[str, ReputationMetrics],
@@ -59,9 +72,36 @@ async def get_all_reputations():
 
 
 @router.get(
+    "/api/v1/reputation/pending-repairs",
+    response_model=List[str],
+    summary="List service IDs requiring reputation telemetry repair"
+)
+async def get_pending_repairs():
+    return reconciler.get_pending_repairs()
+
+
+@router.get(
     "/api/v1/reputation/{service_id}",
     response_model=ReputationMetrics,
     summary="Get reputation metric for a single service"
 )
 async def get_service_reputation(service_id: str):
     return reputation_calc.calculate_for_service(service_id)
+
+
+@router.post(
+    "/api/v1/reputation/repair/{service_id}",
+    response_model=ReputationMetrics,
+    summary="Retryable recovery: repair reputation metrics for a service"
+)
+async def repair_service_reputation(service_id: str):
+    return reconciler.repair_reputation(service_id)
+
+
+@router.post(
+    "/api/v1/reputation/repair",
+    response_model=Dict[str, ReputationMetrics],
+    summary="Retryable recovery: repair reputation metrics for all services"
+)
+async def repair_all_reputations():
+    return reconciler.repair_reputation()

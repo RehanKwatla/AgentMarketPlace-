@@ -53,6 +53,18 @@ class SettlementReceipt(BaseModel):
 # Service Registry Schemas
 # ==============================================================================
 
+class CapabilityMetadata(BaseModel):
+    """Detailed capability profile, SLA guarantees, and execution constraints."""
+    version: str = Field(default="1.0.0", description="Capability schema semantic version")
+    tags: List[str] = Field(default_factory=list, description="Searchable domain tags")
+    supported_formats: List[str] = Field(default_factory=list, description="Supported MIME or content formats")
+    max_payload_bytes: Optional[int] = Field(default=None, description="Max input payload size in bytes")
+    rate_limit_per_minute: Optional[int] = Field(default=None, description="Max allowed requests per minute")
+    sla_latency_p95_ms: Optional[int] = Field(default=None, description="Service level agreement p95 latency target")
+    deterministic: bool = Field(default=True, description="Whether output is idempotent and deterministic")
+    constraints: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary service-specific execution constraints")
+
+
 class ServiceDefinition(BaseModel):
     service_id: str = Field(..., description="Unique service slug, e.g. data_001")
     name: str = Field(..., description="Human-readable service title")
@@ -66,6 +78,10 @@ class ServiceDefinition(BaseModel):
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     is_active: bool = Field(default=True)
+    capability_metadata: Optional[CapabilityMetadata] = Field(
+        default=None,
+        description="Detailed capability profile and execution constraints",
+    )
 
     @model_validator(mode="after")
     def populate_base_units(self) -> "ServiceDefinition":
@@ -128,6 +144,26 @@ class LedgerRecordSchema(BaseModel):
     status: LedgerStatus
     latency_ms: float
     error_reason: Optional[str] = None
+    task_id: Optional[str] = None
+    payment_id: Optional[str] = None
+    amount_paid_units: Optional[int] = None
+    listed_price_units: Optional[int] = None
+    network: Optional[str] = NETWORK_BASE_SEPOLIA
+    token: Optional[str] = USDC_BASE_SEPOLIA
+
+    @model_validator(mode="after")
+    def populate_units(self) -> "LedgerRecordSchema":
+        if self.amount_paid and self.amount_paid_units is None:
+            try:
+                self.amount_paid_units = usdc_to_base_units(self.amount_paid)
+            except Exception:
+                pass
+        if self.listed_price and self.listed_price_units is None:
+            try:
+                self.listed_price_units = usdc_to_base_units(self.listed_price)
+            except Exception:
+                pass
+        return self
 
 
 class LedgerListResponse(BaseModel):
@@ -145,3 +181,35 @@ class ReputationMetrics(BaseModel):
     schema_invalid_counts: int = 0
     listed_price_usdc: str = "0.000000"
     reputation_score: float = 100.0
+    total_volume_units: int = 0
+    total_volume_usdc: str = "0.000000"
+
+
+class PaymentReconciliationInput(BaseModel):
+    request_id: str
+    service_id: str
+    buyer_id: str
+    seller_id: str
+    amount_paid_units: int
+    listed_price_units: int
+    proof_header: Optional[str] = None
+    tx_hash: Optional[str] = None
+    settlement_receipt: Optional[SettlementReceipt] = None
+    network: str = NETWORK_BASE_SEPOLIA
+    token: str = USDC_BASE_SEPOLIA
+    task_id: Optional[str] = None
+    latency_ms: float = 0.0
+    output_valid: bool = True
+    error_reason: Optional[str] = None
+
+
+class ReconciliationResult(BaseModel):
+    request_id: str
+    status: LedgerStatus
+    reconciled: bool
+    is_duplicate: bool = False
+    ledger_record: Optional[LedgerRecordSchema] = None
+    reputation_updated: bool = False
+    reputation_repair_needed: bool = False
+    message: str = ""
+

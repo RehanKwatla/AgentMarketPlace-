@@ -132,6 +132,11 @@ class TaskRepository:
             error_reason=error_reason
         )
         ledger_repo.record_transaction(record_schema)
+        try:
+            from backend.ledger.reputation import ReputationCalculator
+            ReputationCalculator(ledger_repo).update_for_service(service_id)
+        except Exception:
+            pass
 
         # 2. Persist to Member 4's SQLAlchemy LedgerRecordModel if available
         try:

@@ -74,3 +74,17 @@ def validate_service_registration(data: Dict[str, Any]) -> None:
     # Validate JSON schemas
     validate_json_schema(data.get("input_schema", {}), "input_schema")
     validate_json_schema(data.get("output_schema", {}), "output_schema")
+
+    # Validate optional capability metadata if present
+    cap_meta = data.get("capability_metadata")
+    if cap_meta is not None:
+        try:
+            from backend.shared.schemas import CapabilityMetadata
+            if isinstance(cap_meta, dict):
+                CapabilityMetadata.model_validate(cap_meta)
+            elif not isinstance(cap_meta, CapabilityMetadata):
+                raise ValidationError(f"Invalid capability metadata type: {type(cap_meta).__name__}")
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise ValidationError(f"Invalid capability metadata: {e}")
