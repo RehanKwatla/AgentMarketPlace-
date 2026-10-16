@@ -15,8 +15,8 @@ export const WalletBackground: React.FC<WalletBackgroundProps> = ({ subtle = fal
         className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[720px] h-[320px] rounded-full blur-[120px] pointer-events-none"
         style={{
           background: subtle 
-            ? 'radial-gradient(ellipse at center, rgba(54, 214, 200, 0.03) 0%, rgba(11, 13, 13, 0) 70%)' 
-            : 'radial-gradient(ellipse at center, rgba(54, 214, 200, 0.05) 0%, rgba(18, 74, 69, 0.02) 40%, rgba(11, 13, 13, 0) 70%)'
+            ? 'radial-gradient(ellipse at center, rgba(255, 255, 255, 0.03) 0%, rgba(10, 10, 10, 0) 70%)' 
+            : 'radial-gradient(ellipse at center, rgba(255, 255, 255, 0.05) 0%, rgba(38, 38, 38, 0.02) 40%, rgba(10, 10, 10, 0) 70%)'
         }}
       />
     </div>

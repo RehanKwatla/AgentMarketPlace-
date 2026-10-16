@@ -7,29 +7,29 @@ interface StatusBadgeProps {
 }
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' }) => {
-  let badgeStyle = 'bg-[#141A19] text-[#A0AAA7] border-[rgba(120,160,153,0.20)]';
-  let dotStyle = 'bg-[#6F7C78]';
+  let badgeStyle = 'bg-[#141414] text-[#A3A3A3] border-[rgba(255, 255, 255,0.20)]';
+  let dotStyle = 'bg-[#737373]';
   let label = status;
 
   if (status === 'paid' || status === 'completed') {
-    badgeStyle = 'bg-[rgba(66,201,149,0.12)] text-[#42C995] border-[rgba(66,201,149,0.3)]';
-    dotStyle = 'bg-[#42C995]';
+    badgeStyle = 'bg-[rgba(163, 163, 163,0.12)] text-[#A3A3A3] border-[rgba(163, 163, 163,0.3)]';
+    dotStyle = 'bg-[#A3A3A3]';
     label = 'Verified Paid / Settled';
   } else if (status === 'paid output rejected') {
-    badgeStyle = 'bg-[rgba(231,185,106,0.12)] text-[#E7B96A] border-[rgba(231,185,106,0.3)]';
-    dotStyle = 'bg-[#E7B96A]';
+    badgeStyle = 'bg-[rgba(163, 163, 163,0.12)] text-[#A3A3A3] border-[rgba(163, 163, 163,0.3)]';
+    dotStyle = 'bg-[#A3A3A3]';
     label = 'Paid (Output Rejected)';
   } else if (status === 'refused') {
-    badgeStyle = 'bg-[rgba(225,109,109,0.12)] text-[#E16D6D] border-[rgba(225,109,109,0.3)]';
-    dotStyle = 'bg-[#E16D6D]';
+    badgeStyle = 'bg-[rgba(115, 115, 115,0.12)] text-[#737373] border-[rgba(115, 115, 115,0.3)]';
+    dotStyle = 'bg-[#737373]';
     label = 'Refused Before Payment';
   } else if (status === 'failed and not charged') {
-    badgeStyle = 'bg-[#141A19] text-[#6F7C78] border-[rgba(120,160,153,0.20)]';
-    dotStyle = 'bg-[#6F7C78]';
+    badgeStyle = 'bg-[#141414] text-[#737373] border-[rgba(255, 255, 255,0.20)]';
+    dotStyle = 'bg-[#737373]';
     label = 'Failed (No Charge)';
   } else if (status === 'pending' || status === 'in_progress') {
-    badgeStyle = 'bg-[rgba(54,214,200,0.12)] text-[#36D6C8] border-[rgba(54,214,200,0.3)]';
-    dotStyle = 'bg-[#36D6C8] animate-ping';
+    badgeStyle = 'bg-[rgba(255, 255, 255,0.12)] text-[#FFFFFF] border-[rgba(255, 255, 255,0.3)]';
+    dotStyle = 'bg-[#FFFFFF] animate-ping';
     label = 'Reconciling / In Flight';
   }
 

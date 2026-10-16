@@ -40,7 +40,7 @@ export const ServiceLeaderboard: React.FC<ServiceLeaderboardProps> = ({
     <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-white/10 text-neutral-300 border border-white/20 flex items-center justify-center">
             <Trophy className="w-4 h-4" />
           </div>
           <div>
@@ -57,7 +57,7 @@ export const ServiceLeaderboard: React.FC<ServiceLeaderboardProps> = ({
               onClick={() => setSortKey(key)}
               className={`px-2.5 py-1 rounded-md capitalize transition-colors ${
                 sortKey === key 
-                  ? 'bg-blue-600 text-white font-bold' 
+                  ? 'bg-white text-black font-bold' 
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -90,11 +90,11 @@ export const ServiceLeaderboard: React.FC<ServiceLeaderboardProps> = ({
                   <td className="px-4 py-3.5 text-center">
                     <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full font-bold ${
                       index === 0 
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                        ? 'bg-white/15 text-white border border-white/30' 
                         : index === 1
                         ? 'bg-slate-300/20 text-slate-200 border border-slate-400/40'
                         : index === 2
-                        ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+                        ? 'bg-white/5 text-neutral-400 border border-white/15'
                         : 'text-slate-500'
                     }`}>
                       #{index + 1}
@@ -112,7 +112,7 @@ export const ServiceLeaderboard: React.FC<ServiceLeaderboardProps> = ({
                     </span>
                   </td>
 
-                  <td className="px-4 py-3.5 text-emerald-400 font-bold">
+                  <td className="px-4 py-3.5 text-neutral-300 font-bold">
                     {svc.price_usdc} USDC
                   </td>
 
@@ -123,7 +123,7 @@ export const ServiceLeaderboard: React.FC<ServiceLeaderboardProps> = ({
                   <td className="px-4 py-3.5">
                     {totalCalls > 0 && rep ? (
                       <div>
-                        <span className="text-emerald-400 font-semibold">{rep.success_rate.toFixed(0)}%</span>
+                        <span className="text-neutral-300 font-semibold">{rep.success_rate.toFixed(0)}%</span>
                         {rep.median_latency_ms > 0 && (
                           <span className="text-slate-500 ml-1.5">({rep.median_latency_ms.toFixed(0)}ms)</span>
                         )}
@@ -136,7 +136,7 @@ export const ServiceLeaderboard: React.FC<ServiceLeaderboardProps> = ({
                   <td className="px-4 py-3.5 text-right">
                     <button
                       onClick={() => onSelectService(svc)}
-                      className="px-3 py-1 rounded bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 font-semibold transition-colors"
+                      className="px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-white border border-white/20 font-semibold transition-colors"
                     >
                       Inspect
                     </button>

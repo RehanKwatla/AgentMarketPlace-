@@ -30,7 +30,7 @@ export const Layout: React.FC = () => {
   const isHomePage = location.pathname === '/';
 
   return (
-    <div className="relative min-h-screen bg-[#0B0D0D] text-[#F4F7F6] flex flex-col font-sans selection:bg-[#36D6C8] selection:text-[#0B0D0D]">
+    <div className="relative min-h-screen bg-[#0A0A0A] text-[#FAFAFA] flex flex-col font-sans selection:bg-[#FFFFFF] selection:text-[#0A0A0A]">
       {/* Concentric Circular Rings & Radial Lighting Background */}
       <WalletBackground subtle={!isHomePage} />
 
@@ -43,11 +43,11 @@ export const Layout: React.FC = () => {
       {/* Main Page Workspace */}
       <main className="relative z-10 flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-6">
         {fetchError && (
-          <div className="mb-6 p-3.5 rounded-xl bg-[rgba(225,109,109,0.12)] border border-[rgba(225,109,109,0.3)] text-[#E16D6D] text-xs font-mono flex items-center justify-between">
+          <div className="mb-6 p-3.5 rounded-xl bg-[rgba(115, 115, 115,0.12)] border border-[rgba(115, 115, 115,0.3)] text-[#737373] text-xs font-mono flex items-center justify-between">
             <span>Backend Notice: {fetchError}. Check FastAPI server at http://localhost:8000</span>
             <button
               onClick={() => refreshData()}
-              className="px-2.5 py-1 bg-[#E16D6D] text-[#0B0D0D] font-bold rounded-lg text-[11px] cursor-pointer hover:bg-[#E16D6D]/90 transition-colors"
+              className="px-2.5 py-1 bg-[#737373] text-[#0A0A0A] font-bold rounded-lg text-[11px] cursor-pointer hover:bg-[#737373]/90 transition-colors"
             >
               Retry
             </button>
@@ -58,29 +58,29 @@ export const Layout: React.FC = () => {
       </main>
 
       {/* Consistent Footer */}
-      <footer className="relative z-10 border-t border-[rgba(120,160,153,0.18)] bg-[#0B0D0D]/90 backdrop-blur-md py-6 text-xs text-[#A0AAA7] font-mono mt-12">
+      <footer className="relative z-10 border-t border-[rgba(255, 255, 255,0.18)] bg-[#0A0A0A]/90 backdrop-blur-md py-6 text-xs text-[#A3A3A3] font-mono mt-12">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#36D6C8] shadow-sm shadow-[#36D6C8]" />
-            <span className="text-[#F4F7F6] font-bold">Agentic Market</span>
+            <span className="w-2 h-2 rounded-full bg-[#FFFFFF] shadow-sm shadow-[#FFFFFF]" />
+            <span className="text-[#FAFAFA] font-bold">Agentic Market</span>
             <span>—</span>
             <span>DISCOVER → CONNECT → PAY → AUTOMATE</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-[#A0AAA7] text-[11px]">
-            <NavLink to="/marketplace" className="hover:text-[#36D6C8] transition-colors">Marketplace</NavLink>
+          <div className="flex flex-wrap items-center gap-4 text-[#A3A3A3] text-[11px]">
+            <NavLink to="/marketplace" className="hover:text-[#FFFFFF] transition-colors">Marketplace</NavLink>
             <span>•</span>
-            <NavLink to="/payments" className="hover:text-[#36D6C8] transition-colors">Payments</NavLink>
+            <NavLink to="/payments" className="hover:text-[#FFFFFF] transition-colors">Payments</NavLink>
             <span>•</span>
-            <NavLink to="/buyer" className="hover:text-[#36D6C8] transition-colors">Buyer Agent</NavLink>
+            <NavLink to="/buyer" className="hover:text-[#FFFFFF] transition-colors">Buyer Agent</NavLink>
             <span>•</span>
-            <NavLink to="/seller" className="hover:text-[#36D6C8] transition-colors">Seller Tools</NavLink>
+            <NavLink to="/seller" className="hover:text-[#FFFFFF] transition-colors">Seller Tools</NavLink>
             <span>•</span>
-            <NavLink to="/analytics" className="hover:text-[#36D6C8] transition-colors">Analytics</NavLink>
+            <NavLink to="/analytics" className="hover:text-[#FFFFFF] transition-colors">Analytics</NavLink>
             <span>•</span>
-            <NavLink to="/about" className="hover:text-[#36D6C8] transition-colors">About</NavLink>
+            <NavLink to="/about" className="hover:text-[#FFFFFF] transition-colors">About</NavLink>
             <span>•</span>
-            <span className="text-[#42C995] font-semibold">Base Sepolia USDC</span>
+            <span className="text-[#A3A3A3] font-semibold">Base Sepolia USDC</span>
           </div>
         </div>
       </footer>

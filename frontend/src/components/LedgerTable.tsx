@@ -44,15 +44,15 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
       {/* Filtering Toolbar */}
       <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between wallet-card p-2.5 rounded-lg text-xs font-sans">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-[#9BA5A2]">
-            <Filter className="w-3.5 h-3.5 text-[#36D6C8]" />
+          <div className="flex items-center gap-1 text-[#A3A3A3]">
+            <Filter className="w-3.5 h-3.5 text-[#FFFFFF]" />
             <span>Filter:</span>
           </div>
 
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8]"
+            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF]"
           >
             <option value="all">All Statuses ({records.length})</option>
             <option value="paid">Settled</option>
@@ -64,7 +64,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
           <select
             value={filterService}
             onChange={(e) => setFilterService(e.target.value)}
-            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8]"
+            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF]"
           >
             <option value="all">All Services</option>
             {uniqueServices.map(sid => (
@@ -79,17 +79,17 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
             placeholder="Search ID or Tx hash..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:w-56 bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1 text-[#F4F7F6] placeholder-[#6B7673] focus:outline-none focus:border-[#36D6C8]"
+            className="w-full sm:w-56 bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1 text-[#FAFAFA] placeholder-[#737373] focus:outline-none focus:border-[#FFFFFF]"
           />
         </div>
       </div>
 
       {/* Ledger Records Table */}
-      <div className="wallet-card rounded-lg border border-[rgba(120,160,153,0.18)] overflow-hidden">
+      <div className="wallet-card rounded-lg border border-[rgba(255, 255, 255,0.18)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-[rgba(120,160,153,0.16)] bg-[#0E1212] text-[#9BA5A2]">
+              <tr className="border-b border-[rgba(255, 255, 255,0.16)] bg-[#0E0E0E] text-[#A3A3A3]">
                 <th className="py-2.5 px-4 font-medium">Request ID</th>
                 <th className="py-2.5 px-4 font-medium">Service</th>
                 <th className="py-2.5 px-4 font-medium">Status</th>
@@ -99,10 +99,10 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                 <th className="py-2.5 px-4 font-medium text-right">Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[rgba(120,160,153,0.12)] text-[#F4F7F6]">
+            <tbody className="divide-y divide-[rgba(255, 255, 255,0.12)] text-[#FAFAFA]">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-[#6B7673]">
+                  <td colSpan={7} className="text-center py-10 text-[#737373]">
                     No settlement records found in the current filter.
                   </td>
                 </tr>
@@ -115,15 +115,15 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                     <tr
                       key={record.request_id}
                       onClick={() => onSelectRecord && onSelectRecord(record)}
-                      className={`hover:bg-[#151A1A] cursor-pointer transition-colors ${
-                        isSelected ? 'bg-[rgba(54,214,200,0.06)] border-l-2 border-l-[#36D6C8]' : ''
+                      className={`hover:bg-[#151515] cursor-pointer transition-colors ${
+                        isSelected ? 'bg-[rgba(255, 255, 255,0.06)] border-l-2 border-l-[#FFFFFF]' : ''
                       }`}
                     >
-                      <td className="py-2.5 px-4 font-mono font-medium text-[#F4F7F6]">
+                      <td className="py-2.5 px-4 font-mono font-medium text-[#FAFAFA]">
                         {record.request_id}
                       </td>
 
-                      <td className="py-2.5 px-4 font-mono text-[#36D6C8]">
+                      <td className="py-2.5 px-4 font-mono text-[#FFFFFF]">
                         {record.service_id}
                       </td>
 
@@ -132,10 +132,10 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                       </td>
 
                       <td className="py-2.5 px-4 font-mono font-medium">
-                        {record.amount_paid} <span className="text-[11px] text-[#9BA5A2]">USDC</span>
+                        {record.amount_paid} <span className="text-[11px] text-[#A3A3A3]">USDC</span>
                       </td>
 
-                      <td className="py-2.5 px-4 font-mono text-[#9BA5A2] hidden md:table-cell">
+                      <td className="py-2.5 px-4 font-mono text-[#A3A3A3] hidden md:table-cell">
                         {record.latency_ms > 0 ? `${record.latency_ms} ms` : '—'}
                       </td>
 
@@ -146,13 +146,13 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="text-[#36D6C8] hover:underline flex items-center gap-1 font-mono text-[11px]"
+                            className="text-[#FFFFFF] hover:underline flex items-center gap-1 font-mono text-[11px]"
                           >
                             <span>{record.tx_hash?.slice(0, 10)}...</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         ) : (
-                          <span className="text-[#6B7673] font-mono text-[11px]">Testnet Proof</span>
+                          <span className="text-[#737373] font-mono text-[11px]">Testnet Proof</span>
                         )}
                       </td>
 
@@ -162,7 +162,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                             e.stopPropagation();
                             onSelectRecord && onSelectRecord(record);
                           }}
-                          className="px-2 py-0.5 rounded bg-[#161B1A] hover:bg-[#1F2524] text-[#9BA5A2] hover:text-[#F4F7F6] text-xs border border-[rgba(120,160,153,0.2)] transition-colors cursor-pointer"
+                          className="px-2 py-0.5 rounded bg-[#171717] hover:bg-[#1F1F1F] text-[#A3A3A3] hover:text-[#FAFAFA] text-xs border border-[rgba(255, 255, 255,0.2)] transition-colors cursor-pointer"
                         >
                           Inspect
                         </button>

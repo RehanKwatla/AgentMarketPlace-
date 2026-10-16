@@ -30,7 +30,7 @@ if response.status_code == 402:
     <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-slate-900/60 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-white/10 text-white border border-white/20 flex items-center justify-center">
             <Code2 className="w-4 h-4" />
           </div>
           <div>
@@ -44,7 +44,7 @@ if response.status_code == 402:
             onClick={handleCopy}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition-colors border border-slate-700"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-neutral-300" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
             <span>{copied ? 'Copied' : 'Copy Code'}</span>
           </button>
         </div>
@@ -53,7 +53,7 @@ if response.status_code == 402:
       <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
         <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800/80 bg-slate-900/80 text-[11px] font-mono text-slate-400">
           <span className="flex items-center gap-1.5">
-            <Terminal className="w-3.5 h-3.5 text-blue-400" />
+            <Terminal className="w-3.5 h-3.5 text-white" />
             <span>python_client.py</span>
           </span>
           <span className="text-[10px] text-slate-500 uppercase">Base Sepolia USDC</span>
@@ -69,7 +69,7 @@ if response.status_code == 402:
           href="/docs" 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="text-blue-400 hover:underline inline-flex items-center gap-1 font-mono text-[11px]"
+          className="text-white hover:underline inline-flex items-center gap-1 font-mono text-[11px]"
         >
           <span>FastAPI Specs</span>
           <ExternalLink className="w-3 h-3" />
