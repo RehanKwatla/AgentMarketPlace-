@@ -70,3 +70,28 @@ export interface ReputationMetrics {
   listed_price_usdc: string;
   reputation_score: number;
 }
+
+export interface HealthInfo {
+  status: string;
+  version: string;
+  network: string;
+  timestamp?: string;
+  services?: Record<string, string>;
+}
+
+export interface PlannedStepEstimate {
+  step_number: number;
+  category: ServiceCategory;
+  service_id: string;
+  estimated_cost_usdc: string;
+  service_name?: string;
+}
+
+export interface TaskPlanPreview {
+  prompt: string;
+  budget_usdc: string;
+  steps: PlannedStepEstimate[];
+  estimated_total_usdc: string;
+  is_affordable: boolean;
+  missing_services?: string[];
+}
