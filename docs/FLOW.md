@@ -132,6 +132,36 @@ sequenceDiagram
 
 ---
 
+## 3.1 Seller Endpoint Payment Verification & Execution Lifecycle Flow
+
+When an HTTP request with payment headers arrives at a seller endpoint (Member 2):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Buyer as Buyer Agent
+    participant SellerRoute as backend/sellers/routes.py
+    participant Facilitator as Facilitator / Web3 RPC
+    participant SellerSvc as backend/sellers/common.py (BaseSellerService)
+    participant Budget as backend/payments/budget.py
+
+    Buyer->>SellerRoute: POST /api/v1/seller/data<br/>Headers: X-402-Payment-Payload, Idempotency-Key
+    SellerRoute->>SellerRoute: Validate Payload Schema (Fail-Closed on 400 Bad Request)
+    SellerRoute->>Facilitator: Settle Payment Authorization on Base Sepolia
+    alt Verifier Unavailable or Returns None / Rejection
+        SellerRoute-->>Buyer: HTTP 503 / HTTP 402 (Fail-closed, seller logic never runs)
+    else Verification & Settlement Succeeded
+        Facilitator-->>SellerRoute: Settlement Confirmation & TX Hash / Receipt
+        SellerRoute->>SellerSvc: BaseSellerService.execute_lifecycle(payload, context)
+        SellerSvc->>SellerSvc: Input Validation -> Bounded Timeout Execution -> Output Validation -> Metrics
+        SellerSvc-->>SellerRoute: Validated Output + ExecutionMetrics
+        SellerRoute-->>Buyer: HTTP 200 OK + Payload<br/>Header: X-402-Settlement-Proof: "rec_..."
+        Buyer->>Budget: BudgetManager.commit(res_id, 2000)
+    end
+```
+
+---
+
 ## 4. Autonomous Buyer Agent Task Orchestration Flow
 
 When a task is submitted to `POST /api/v1/tasks`:
@@ -227,7 +257,9 @@ scripts/run_tests.py
         ├── test_phase3_payment_hardening.py: Tests seller verifier dependencies, live facilitator HTTP client, & batch reconciliation
         ├── test_budget.py: Tests base unit arithmetic, overdraw blocks, & 10-task concurrency lock
         ├── test_replay.py: Tests nonce single-use cache & idempotency key store
-        ├── test_sellers.py: Tests 402 challenge issuance & paid execution stubs
+        ├── test_sellers.py: Tests 402 challenge issuance, fail-closed verifier checks, dependency overrides, and error sanitization
+        ├── test_sellers_foundation.py: Tests BaseSellerService lifecycle, output schema rejection, context extraction, metrics, and timeouts
+        ├── test_sellers_payment_integration.py: Tests seller-payment lifecycle, verbatim proof attachment, SSRF defenses, and terms mismatch
         ├── test_buyer.py: Tests TaskPlanner decomposition & budget refusal
         ├── test_buyer_task_api.py: Tests /api/v1/tasks endpoints, lifecycle states, and polling
         ├── test_planner_validator.py: Tests DAG validation, cycle detection, and price tampering
@@ -243,4 +275,5 @@ scripts/run_tests.py
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All tests execute in ~5-6 seconds with a 100% pass rate.
+
+All unit, foundation, integration, and security tests execute with a 100% pass rate.
