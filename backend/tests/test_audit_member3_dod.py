@@ -501,3 +501,69 @@ def test_dod_10_displayed_spending_agrees_with_verified_ledger_data():
     # Base Sepolia explorer link formatted strictly without fabrication
     assert len(exp.explorer_links) == 1
     assert exp.explorer_links[0] == f"https://sepolia.basescan.org/tx/{valid_tx}"
+
+
+# ==============================================================================
+# Additional Protocol Verification: Official vs Custom Headers Compatibility
+# ==============================================================================
+@pytest.mark.asyncio
+async def test_dod_4b_standard_x402_protocol_headers_compatibility():
+    """Verify that BuyerService seamlessly supports standard and custom x402 headers."""
+    from backend.payments.x402_adapter import (
+        HEADER_OFFICIAL_PAYMENT_REQUIRED,
+        HEADER_OFFICIAL_PAYMENT_RESPONSE,
+    )
+    spy = MockMember1PaymentClientSpy()
+    service = BuyerService(payment_client=spy)
+    budget_mgr = BudgetManager(initial_budget_units=10000)
+    data_svc = service.registry.get_service("data_001")
+
+    call_plan = PlannedCall(
+        step_id=1,
+        category="data",
+        service_id="data_001",
+        input_payload={"symbol": "ETH"},
+        estimated_price_units=2000,
+        depends_on=[]
+    )
+
+    import json as json_module
+    mock_402 = MagicMock(
+        status_code=402,
+        headers={
+            HEADER_OFFICIAL_PAYMENT_REQUIRED: "mock_challenge_terms",
+            HEADER_X402_REQUIREMENT: json_module.dumps({
+                "version": "2.0",
+                "network": NETWORK_BASE_SEPOLIA,
+                "token": USDC_BASE_SEPOLIA,
+                "amount": "2000",
+                "payTo": data_svc.pay_to,
+                "nonce": "test_nonce_standard_headers",
+                "service_id": "data_001"
+            })
+        }
+    )
+    mock_200 = MagicMock(
+        status_code=200,
+        headers={
+            HEADER_OFFICIAL_PAYMENT_RESPONSE: "official_settle_proof_receipt_123",
+            HEADER_X402_SETTLEMENT_PROOF: "official_settle_proof_receipt_123",
+            "content-type": "application/json"
+        },
+        json=MagicMock(return_value={"symbol": "ETH", "price": 3500.0, "volume_24h": 10000.0, "timestamp": "2026-10-16T12:00:00Z"})
+    )
+
+    with patch("httpx.AsyncClient.post", side_effect=[mock_402, mock_200]):
+        record = await service._execute_call(
+            task_id="task_standard_headers",
+            planned=call_plan,
+            budget_mgr=budget_mgr,
+            upstream_calls={},
+            fallbacks=[],
+            warnings=[]
+        )
+
+    assert record.status == CallStatus.SUCCEEDED, f"Call failed with error: {record.error_message}"
+    assert len(spy.payload_creation_calls) == 1
+    assert len(spy.settlement_verification_calls) == 1
+
