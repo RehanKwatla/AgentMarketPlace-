@@ -55,7 +55,7 @@ class BuyerService:
         self.registry = registry
         self.repository = repository
         self.policy_verifier = policy_verifier or PaymentPolicyVerifier()
-        self.settlement_verifier = settlement_verifier or SettlementVerifier(rpc_url="")
+        self.settlement_verifier = settlement_verifier or SettlementVerifier(rpc_url="", test_mode=True)
         self.payment_client = payment_client or BuyerPaymentClient(
             policy_verifier=self.policy_verifier,
             settlement_verifier=self.settlement_verifier,
