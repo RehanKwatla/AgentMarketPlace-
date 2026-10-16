@@ -56,3 +56,13 @@ async def reconcile_payment_attempt(attempt_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc)
         )
+
+
+@router.post("/reconcile", summary="Batch reconcile all pending payment attempts")
+async def batch_reconcile_pending_attempts():
+    """Trigger authoritative re-query of all attempts currently held in suspense."""
+    results = await payment_service.reconcile_all_pending()
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"reconciled_attempts": results, "total": len(results)}
+    )

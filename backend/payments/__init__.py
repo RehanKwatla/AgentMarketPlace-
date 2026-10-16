@@ -18,6 +18,7 @@ from .errors import (
     SettlementVerificationError,
     SettlementTimeoutError,
 )
+from .dependencies import get_seller_payment_verifier, verify_seller_payment
 from .routes import router
 
 __all__ = [
@@ -30,6 +31,8 @@ __all__ = [
     "settlement_verifier",
     "SellerPaymentVerifier",
     "seller_payment_verifier",
+    "get_seller_payment_verifier",
+    "verify_seller_payment",
     "BuyerPaymentClientInterface",
     "SellerPaymentVerifierInterface",
     "PaidCallRequest",

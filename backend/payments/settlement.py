@@ -178,8 +178,28 @@ class SettlementVerifier:
             return False, receipt_id
 
         # Live mode: Facilitator API query
-        logger.warning(f"Live facilitator verification called for '{receipt_id}' - endpoint not yet integrated [STUB].")
-        return False, receipt_id
+        if not self.facilitator_url:
+            logger.warning("No facilitator_url configured for live facilitator receipt verification.")
+            return False, receipt_id
+
+        url = f"{self.facilitator_url.rstrip('/')}/receipts/{receipt_id}"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    status_val = str(data.get("status", "")).lower()
+                    if status_val in ("confirmed", "settled", "success", "paid") or data.get("valid") is True:
+                        return True, receipt_id
+                    logger.warning(f"Facilitator returned non-settled status for receipt {receipt_id}: {data}")
+                    return False, receipt_id
+                else:
+                    logger.warning(f"Facilitator query returned HTTP {resp.status_code} for receipt {receipt_id}")
+                    return False, receipt_id
+        except Exception as exc:
+            logger.warning(f"Facilitator query failed for receipt {receipt_id}: {exc}")
+            return False, receipt_id
+
 
     def decode_and_validate_transfer_logs(
         self,
