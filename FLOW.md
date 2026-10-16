@@ -182,7 +182,8 @@ scripts/run_tests.py
         ├── test_replay.py: Tests nonce single-use cache & idempotency key store
         ├── test_sellers.py: Tests 402 challenge issuance & paid execution stubs
         ├── test_buyer.py: Tests TaskPlanner decomposition & budget refusal
+        ├── test_member3.py: Tests canonical /api/v1/tasks lifecycle, query filters, output validation, & reputation
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All 32 tests execute in under 0.25 seconds and verify every subsystem interface before developer feature branches are merged.
+All 41 tests execute in under 0.6 seconds and verify every subsystem interface before developer feature branches are merged.

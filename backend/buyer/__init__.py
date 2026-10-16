@@ -1,16 +1,41 @@
 """Buyer subsystem module owned by Member 3."""
-from .routes import router
-from .task_planner import TaskPlanner, TaskPlan, PlannedStep
-from .service_selector import ServiceSelector
-from .result_aggregator import ResultAggregator
-from .buyer_agent import BuyerAgent
+from .router import router
+from .service import BuyerService, buyer_service
+from .planner import TaskPlanner
+from .selector import ServiceSelector
+from .plan_validator import PlanValidator, ExecutionPlan, PlannedCall
+from .output_validator import OutputValidator
+from .aggregator import ResultAggregator
+from .explanation import ExplanationGenerator
+from .schemas import (
+    TaskStatus,
+    CallStatus,
+    TaskCreationRequest,
+    TaskCreationResponse,
+    TaskDetailResponse,
+    TaskCallsResponse,
+    ServiceCallRecord,
+    PurchaseExplanation,
+)
 
 __all__ = [
     "router",
+    "BuyerService",
+    "buyer_service",
     "TaskPlanner",
-    "TaskPlan",
-    "PlannedStep",
     "ServiceSelector",
+    "PlanValidator",
+    "ExecutionPlan",
+    "PlannedCall",
+    "OutputValidator",
     "ResultAggregator",
-    "BuyerAgent",
+    "ExplanationGenerator",
+    "TaskStatus",
+    "CallStatus",
+    "TaskCreationRequest",
+    "TaskCreationResponse",
+    "TaskDetailResponse",
+    "TaskCallsResponse",
+    "ServiceCallRecord",
+    "PurchaseExplanation",
 ]

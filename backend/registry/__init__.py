@@ -1,5 +1,16 @@
 """Registry subsystem module owned by Member 3."""
-from .routes import router
-from .service_catalog import ServiceCatalog, catalog
+from .router import router
+from .service import RegistryService, registry_service
+from .schemas import ServiceRecord, ServiceListResponse, ServiceReputationSummary
+from .validation import validate_service_registration, validate_json_schema
 
-__all__ = ["router", "ServiceCatalog", "catalog"]
+__all__ = [
+    "router",
+    "RegistryService",
+    "registry_service",
+    "ServiceRecord",
+    "ServiceListResponse",
+    "ServiceReputationSummary",
+    "validate_service_registration",
+    "validate_json_schema",
+]
