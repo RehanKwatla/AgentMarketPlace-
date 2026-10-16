@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
-
 from backend.shared.constants import (
     HEADER_IDEMPOTENCY_KEY,
     HEADER_X402_PAYMENT_PAYLOAD,
@@ -64,6 +63,9 @@ class BuyerAgent:
         repository: TaskRepository = task_repository,
         planner: Optional[TaskPlanner] = None,
         service: Optional[BuyerService] = None,
+        selector: Any = None,
+        aggregator: Optional[ResultAggregator] = None,
+        payment_service: Any = None,
     ):
         self.registry = registry
         self.repository = repository

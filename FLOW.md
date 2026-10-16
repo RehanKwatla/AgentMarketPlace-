@@ -27,10 +27,10 @@ graph TD
 ```
 
 ### Execution Steps:
-1. **Entrypoint:** [`scripts/start_dev.py`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/scripts/start_dev.py) adds the workspace root to `sys.path` and starts Uvicorn.
-2. **Configuration Load:** [`backend/shared/config.py`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/backend/shared/config.py) reads `.env` variables (Base Sepolia RPC, contract addresses, seller endpoints).
-3. **Database Spin-up:** [`backend/database/session.py`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/backend/database/session.py) sets up the SQLAlchemy engine. The `lifespan` handler in [`backend/main.py`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/backend/main.py) calls `init_db()` to ensure tables exist in SQLite/PostgreSQL.
-4. **Service Catalog Seed:** [`backend/registry/service_catalog.py`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/backend/registry/service_catalog.py) initializes with default entries for the three sellers (`data_001`, `scraping_001`, `inference_001`).
+1. **Entrypoint:** [`scripts/start_dev.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/scripts/start_dev.py) adds the workspace root to `sys.path` and starts Uvicorn.
+2. **Configuration Load:** [`backend/shared/config.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/shared/config.py) reads `.env` variables (Base Sepolia RPC, contract addresses, seller endpoints).
+3. **Database Spin-up:** [`backend/database/session.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/database/session.py) sets up the SQLAlchemy engine. The `lifespan` handler in [`backend/main.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/main.py) calls `init_db()` to ensure tables exist in SQLite/PostgreSQL.
+4. **Service Catalog Seed:** [`backend/registry/service_catalog.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/registry/service_catalog.py) initializes with default entries for the three sellers (`data_001`, `scraping_001`, `inference_001`).
 5. **Route Registration:** All subsystem routers are mounted under `/api/v1/` and health diagnostics under `/health`.
 
 ---
@@ -58,41 +58,76 @@ sequenceDiagram
 
 ---
 
-## 3. x402 v2 Payment Negotiation Handshake Flow
+## 3. Member 1 Payment Engine: `execute_paid_call` Flow
 
-When an HTTP request is made to a seller endpoint (e.g. `POST /api/v1/seller/data`):
+When the Buyer Agent (or client) invokes `PaymentService.execute_paid_call()`:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Buyer as Buyer Agent
-    participant SellerRoute as backend/sellers/routes.py
+    actor Buyer as Buyer Agent (Member 3)
+    participant Svc as backend/payments/service.py
+    participant Idemp as backend/payments/idempotency.py
     participant Policy as backend/payments/policy.py
     participant Budget as backend/payments/budget.py
-    participant Signer as backend/payments/interfaces.py
-    participant Facilitator as x402 Facilitator (Base Sepolia)
-    participant SellerSvc as backend/sellers/data_seller.py
+    participant Adapter as backend/payments/x402_adapter.py
+    participant Seller as backend/sellers/routes.py
+    participant Settle as backend/payments/settlement.py
+    participant Repo as backend/payments/models.py (Durable Repo)
+    participant Ledger as backend/ledger/models.py
 
-    Buyer->>SellerRoute: POST /api/v1/seller/data {"symbol": "ETH"} (No headers)
-    SellerRoute->>SellerRoute: Check X-402-Payment-Payload (Missing)
-    SellerRoute-->>Buyer: HTTP 402 Payment Required<br/>Header: X-402-Requirement: {token, network, amount: 2000, payTo, nonce}
+    Buyer->>Svc: execute_paid_call(task_id, call_id, service_id, payload, key)
 
-    critical Buyer Verification & Signing
-        Buyer->>Policy: PaymentPolicyVerifier.verify(requirement, service)
-        Policy-->>Buyer: Policy OK (network, token, payTo, price match)
-        Buyer->>Budget: BudgetManager.reserve(res_id, 2000)
-        Budget-->>Buyer: Reserved successfully
-        Buyer->>Signer: BuyerPaymentClient.create_payment_payload(...)
-        Signer-->>Buyer: Signed EIP-712 PaymentPayload
+    Svc->>Idemp: check_or_register(key, SHA256(payload))
+    Idemp->>Repo: get_attempt_by_idempotency_key(key) [DB Recovery]
+    alt Idempotency Hit (Same Key & Payload)
+        Idemp-->>Svc: Return cached PaidCallResult
+        Svc-->>Buyer: Return cached PaidCallResult (Zero Network Call)
+    else Idempotency Conflict (Different Payload)
+        Idemp-->>Svc: Raise IdempotencyConflictError
+        Svc-->>Buyer: PaidCallResult(status='refused', code='IDEMPOTENCY_CONFLICT')
     end
 
-    Buyer->>SellerRoute: POST /api/v1/seller/data<br/>Headers: X-402-Payment-Payload, Idempotency-Key
-    SellerRoute->>Facilitator: Settle Payment Authorization on Base Sepolia
-    Facilitator-->>SellerRoute: Settlement Confirmation & TX Hash / Receipt
-    SellerRoute->>SellerSvc: DataSellerService.execute(payload)
-    SellerSvc-->>SellerRoute: DataSellerOutput {"symbol": "ETH", "price": 2650.50}
-    SellerRoute-->>Buyer: HTTP 200 OK + Payload<br/>Header: X-402-Settlement-Proof: "receipt_..."
-    Buyer->>Budget: BudgetManager.commit(res_id, 2000)
+    Svc->>Policy: verify_service_terms(service)
+    alt Policy Violation
+        Policy-->>Svc: Raise PaymentPolicyViolationError
+        Svc-->>Buyer: PaidCallResult(status='refused')
+    end
+
+    Svc->>Budget: reserve(reservation_id, price_base_units)
+    Budget->>Repo: record_reservation(res_id, task_id, units) [Durable Lock]
+    alt Insufficient Budget
+        Budget-->>Svc: Raise BudgetExceededError
+        Svc-->>Buyer: PaidCallResult(status='refused', code='BUDGET_EXCEEDED')
+    end
+
+    Svc->>Adapter: execute_paid_request(service, payload, key)
+    Adapter->>Seller: POST endpoint_url (Initial challenge trigger)
+    Seller-->>Adapter: HTTP 402 + X-402-Requirement
+    Adapter->>Policy: verify(requirement, service)
+    Adapter->>Adapter: create_payment_payload(requirement, key) [EIP-712 Sign]
+    Adapter->>Seller: POST endpoint_url + X-402-Payment-Payload + Idempotency-Key
+
+    alt Network Timeout / Disconnection
+        Seller--xAdapter: Timeout
+        Adapter-->>Svc: Raise SettlementTimeoutError
+        Svc->>Svc: retain_in_suspense(status='pending reconciliation', hold_reservation=True)
+        Svc-->>Buyer: PaidCallResult(status='pending reconciliation')
+    else Seller Delivers Response
+        Seller-->>Adapter: HTTP 200 OK + payload + X-402-Settlement-Proof
+        Adapter-->>Svc: (status=200, data, proof_header)
+        Svc->>Settle: verify_settlement_proof(proof_header, price_base_units)
+        Svc->>Svc: validate_seller_output(data, output_schema)
+        alt Output Valid
+            Svc->>Budget: commit(reservation_id, price_base_units)
+            Svc->>Ledger: record_transaction(status='paid')
+            Svc-->>Buyer: PaidCallResult(status='paid', output=data)
+        else Output Invalid
+            Svc->>Budget: commit(reservation_id, price_base_units) [Funds Settled]
+            Svc->>Ledger: record_transaction(status='paid output rejected')
+            Svc-->>Buyer: PaidCallResult(status='paid output rejected')
+        end
+    end
 ```
 
 ---
@@ -169,12 +204,12 @@ graph LR
 
 When a user visits `http://localhost:5173`:
 
-1. **Mounting:** [`frontend/src/main.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/main.tsx) renders [`frontend/src/App.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/App.tsx) which displays [`frontend/src/pages/Dashboard.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/pages/Dashboard.tsx).
-2. **Polling Loop:** `Dashboard.tsx` establishes a 5-second recurring poll via [`frontend/src/api/client.ts`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/api/client.ts):
-   - `fetchHealth()` -> Updates [`Navbar.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/components/Navbar.tsx) with network identifier and health status.
-   - `fetchServices()` -> Renders cards in [`ServiceCard.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/components/ServiceCard.tsx).
+1. **Mounting:** [`frontend/src/main.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/main.tsx) renders [`frontend/src/App.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/App.tsx) which displays [`frontend/src/pages/Dashboard.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/pages/Dashboard.tsx).
+2. **Polling Loop:** `Dashboard.tsx` establishes a 5-second recurring poll via [`frontend/src/api/client.ts`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/api/client.ts):
+   - `fetchHealth()` -> Updates [`Navbar.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/components/Navbar.tsx) with network identifier and health status.
+   - `fetchServices()` -> Renders cards in [`ServiceCard.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/components/ServiceCard.tsx).
    - `fetchReputations()` -> Displays live reputation scores on service cards.
-   - `fetchLedger()` -> Updates [`LedgerTable.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/components/LedgerTable.tsx) with formatted badges from [`ReputationBadge.tsx`](file:///c:/Users/Rehan/OneDrive/Desktop/hacakathon/kurukshetradyp/AgentMarketPlace/frontend/src/components/ReputationBadge.tsx).
+   - `fetchLedger()` -> Updates [`LedgerTable.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/components/LedgerTable.tsx) with formatted badges from [`ReputationBadge.tsx`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/frontend/src/components/ReputationBadge.tsx).
 3. **User Action:** Submitting a prompt triggers `submitBuyerTask()`, which POSTs to `/api/v1/buyer/tasks`, streams the execution status to the UI console, and auto-refreshes the audit log upon completion.
 
 ---
@@ -193,6 +228,8 @@ scripts/run_tests.py
         ├── test_health.py: Verifies GET /health & OpenAPI JSON
         ├── test_registry.py: Tests catalog listing, schema, and price filtering
         ├── test_payments.py: Tests PaymentPolicyVerifier (network, token, payTo, gouging)
+        ├── test_payment_engine.py: Tests Member 1 execute_paid_call(), output schema checks,
+        │                          idempotency replays, conflicts, & timeout suspense
         ├── test_budget.py: Tests base unit arithmetic, overdraw blocks, & 10-task concurrency lock
         ├── test_replay.py: Tests nonce single-use cache & idempotency key store
         ├── test_sellers.py: Tests 402 challenge issuance & paid execution stubs
@@ -207,4 +244,4 @@ scripts/run_tests.py
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All 91 tests execute in ~1.7 seconds and verify every subsystem interface before developer feature branches are merged.
+The complete test suite executes with a 100% pass rate across all subsystems.
