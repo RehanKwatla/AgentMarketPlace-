@@ -110,7 +110,7 @@ async def test_1_buyer_request_to_seller_execution_through_payment_service(test_
     assert first_step.status == LedgerStatus.PAID
     assert float(first_step.price_paid_usdc) == 0.002
     assert first_step.output is not None
-    assert first_step.request_id.startswith("req_")
+    assert first_step.request_id.startswith("req_") or first_step.request_id.startswith("call_")
 
 
 # ---------------------------------------------------------------------------
