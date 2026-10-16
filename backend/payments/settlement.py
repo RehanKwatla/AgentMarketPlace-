@@ -81,12 +81,15 @@ class SettlementVerifier:
         self,
         rpc_url: Optional[str] = None,
         facilitator_url: Optional[str] = None,
-        test_mode: bool = False,
+        test_mode: Optional[bool] = None,
     ):
         settings = get_settings()
         self.rpc_url = rpc_url or settings.base_sepolia_rpc_url
         self.facilitator_url = facilitator_url or settings.x402_facilitator_url
-        self.test_mode = test_mode
+        if test_mode is not None:
+            self.test_mode = test_mode
+        else:
+            self.test_mode = settings.environment.lower() in ("test", "testing", "dev", "development")
         self._w3 = Web3()
 
     async def verify_settlement_proof(

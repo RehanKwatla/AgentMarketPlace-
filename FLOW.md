@@ -132,29 +132,40 @@ sequenceDiagram
 
 ---
 
-## 4. Autonomous Buyer Agent Task Execution Flow
+## 4. Autonomous Buyer Agent Task Orchestration Flow
 
-When a task is submitted to `POST /api/v1/buyer/tasks`:
+When a task is submitted to `POST /api/v1/tasks`:
 
 ```mermaid
 graph TD
-    A["User / Dashboard Submit Task"] -->|POST /api/v1/buyer/tasks| B["backend/buyer/routes.py"]
-    B -->|create_buyer_task()| C["backend/buyer/buyer_agent.py"]
-    C -->|1. plan_task()| D["backend/buyer/task_planner.py"]
-    D -->|Decomposed Steps| C
-    C -->|2. Check Total Budget| E{"Estimated <= Budget?"}
-    E -->|No| F["Status: 'refused' + Explanation"]
-    E -->|Yes| G["Loop Each Planned Step"]
+    A["User / Dashboard Submit Task"] -->|POST /api/v1/tasks| B["backend/buyer/routes.py"]
+    B -->|submit_and_execute_task()| C["backend/buyer/service.py (BuyerService)"]
+    C -->|1. Create DAG Plan| D["backend/buyer/planner.py (TaskPlanner)"]
+    D -->|2. Validate Plan & Budget| E["backend/buyer/plan_validator.py (PlanValidator)"]
+    E -->|Validation Fails / Over-budget| F["Status: 'refused' (0 funds spent)"]
+    E -->|Validation Passes| G["Execute Topological Stages in Parallel"]
     
-    G -->|3. Select Optimal Service| H["backend/buyer/service_selector.py"]
-    G -->|4. execute_paid_call()| I["backend/payments/service.py"]
-    I -->|5. x402 Handshake & Settlement| J["backend/sellers/routes.py"]
-    I -->|6. Return PaidCallResult| G
-    G -->|7. Record Step Result| K["List[ExecutionStep]"]
-    
-    K -->|8. aggregate()| L["backend/buyer/result_aggregator.py"]
-    L -->|Synthesize Final Result & Cost Breakdown| M["TaskResponse"]
-    M -->|Return JSON| A
+    G -->|Stage 0: Parallel Calls| H["asyncio.gather bounded by Semaphore(3)"]
+    H -->|For each planned step| I["_execute_call()"]
+    I -->|Step A: Lock Budget| J["backend/payments/budget.py (BudgetManager.reserve_budget)"]
+    I -->|Step B: Initial Call| K["POST Seller Endpoint"]
+    K -->|HTTP 402 + Requirement| L["PaymentPolicyVerifier.verify()"]
+    L -->|Policy Violation| M["Release Budget -> Status: 'refused'"]
+    L -->|Policy Valid| N["Member 1 BuyerPaymentClient.create_payment_payload()"]
+    N -->|Step C: Re-request with Auth| O["POST Seller with X-402-Payment-Payload"]
+    O -->|Timeout / Network Drop| P["Status: 'pending_reconciliation' (Hold Budget)"]
+    O -->|HTTP 200 without Settlement Proof| P
+    O -->|HTTP 200 with Settlement Proof| Q["Member 1 BuyerPaymentClient.verify_settlement()"]
+    Q -->|Settlement Verified| R["Commit Budget -> Status: 'paid'"]
+    R -->|Step D: Validate Output| S["backend/buyer/output_validator.py"]
+    S -->|Output Valid| T["Status: 'paid'"]
+    S -->|Output Invalid| U["Status: 'paid output rejected'"]
+    T -->|Step E: Persist to Ledger| V["Member 4 backend/ledger/models.py (ledger_repo)"]
+    U -->|Step E: Persist to Ledger| V
+    P -->|Step E: Persist to Ledger| V
+    M -->|Step E: Persist to Ledger| V
+    V -->|Step F: Aggregate Provenance| W["backend/buyer/aggregator.py & explanation.py"]
+    W -->|Save TaskRecord| X["Member 4 SQL TaskRecordModel"]
 ```
 
 ---
@@ -167,8 +178,7 @@ How transaction records transition into audit logs and calculate reputation scor
 graph LR
     A["Completed / Refused Call"] -->|Record Entry| B["backend/ledger/models.py (LedgerRepository)"]
     B -->|Store Record| C["LedgerRecordSchema"]
-    C --> D{"Status"}
-    D -->|Success| E["status = 'paid'"]
+    D{"Status"} -->|Success| E["status = 'paid'"]
     D -->|Corrupted Data| F["status = 'paid output rejected'"]
     D -->|Policy Violation| G["status = 'refused'"]
     D -->|Network Error| H["status = 'failed and not charged'"]
@@ -214,11 +224,23 @@ scripts/run_tests.py
         ├── test_payments.py: Tests PaymentPolicyVerifier (network, token, payTo, gouging)
         ├── test_payment_engine.py: Tests Member 1 execute_paid_call(), output schema checks,
         │                          idempotency replays, conflicts, & timeout suspense
+        ├── test_phase3_payment_hardening.py: Tests seller verifier dependencies, live facilitator HTTP client, & batch reconciliation
         ├── test_budget.py: Tests base unit arithmetic, overdraw blocks, & 10-task concurrency lock
         ├── test_replay.py: Tests nonce single-use cache & idempotency key store
         ├── test_sellers.py: Tests 402 challenge issuance & paid execution stubs
         ├── test_buyer.py: Tests TaskPlanner decomposition & budget refusal
+        ├── test_buyer_task_api.py: Tests /api/v1/tasks endpoints, lifecycle states, and polling
+        ├── test_planner_validator.py: Tests DAG validation, cycle detection, and price tampering
+        ├── test_buyer_orchestration_payment.py: Tests payment routing, budget lock, and pending reconciliation
+        ├── test_buyer_dependency_execution.py: Tests sequential deps, parallel execution, timeouts, & fallbacks
+        ├── test_output_validation_provenance.py: Tests Draft-7 schema rejections, paid_output_rejected accounting, safe fallbacks, zero fact hallucination, and field-level provenance
+        ├── test_purchase_explanation.py: Tests authoritative ledger totals, missing ledger data, pending reconciliation isolation, non-fabricated explorer links, and spending summaries
+        ├── test_member3.py: Tests canonical /api/v1/tasks lifecycle, query filters, output validation, & reputation
+        ├── test_buyer_agent_multihop.py: Tests BuyerAgent multi-hop DAG execution with official x402 headers
+        ├── test_settlement_verification.py: Tests 6-point ERC-20 transfer log settlement verification
+        ├── test_durable_persistence.py: Tests SQLite durable persistence across simulated process restarts
+        ├── test_x402_sdk_compatibility.py: Tests official x402 SDK schemas and EIP-712 signing
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
-All **38 tests** execute in **0.38 seconds** with a 100% pass rate.
+All tests execute in ~5-6 seconds with a 100% pass rate.

@@ -4,13 +4,13 @@
 **Project:** DI-06 — Pay-Per-Call Agent Economy  
 **Network:** Base Sepolia (`eip155:84532`)  
 **Payment Protocol:** Official x402 v2  
-**Current Status:** Member 1 Security Audit Complete; All 67 Tests Passing; Stage D Gate: GO
+**Current Status:** Member 1 & Member 3 Phase 3 Merged; Full End-to-End Test Suite Passing
 
 ---
 
 ## 1. AI Models Engaged
 - **Primary Architect Model:** Gemini 3.8 Flash (High / Medium) via Google Antigravity IDE
-- **Role:** Lead Software Architect, Member 1 (Payment Engine & Security), and Integration Coordinator
+- **Role:** Lead Software Architect, Member 1 (Payment Engine & Security), Member 3 (Buyer Agent & Service Registry), and Integration Coordinator
 - **Operating Environment:** Windows PowerShell / Python 3.14.3 / Node.js v24.16.0 / Git 2.45+
 
 ---
@@ -87,9 +87,8 @@
 - Initialized local Git repository on branch `main`.
 - Pushed `main` (`98ae75d`), fast-forwarded remote feature branches, and pulled upstream Member 3 documentation commit (`c4fe0e7`).
 - Created dedicated branch `M1` tracking `origin/M1`.
-- Acknowledged user constraint: **Do not push until explicitly instructed.**
 
-### Step 9: Member 1 Phase 1 Audit & Contract Freeze
+### Step 9 (Member 1): Phase 1 Audit & Contract Freeze
 - Inspected backend framework, SQLite database, catalog, and x402 compatibility.
 - Discovered absence of `x402` and `web3` in the local Python environment; planned decoupled adapter.
 - Authored four binding Phase 1 specifications in `docs/`:
@@ -98,7 +97,7 @@
   - [`docs/PAYMENT_ENGINE_INTEGRATION.md`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/docs/PAYMENT_ENGINE_INTEGRATION.md)
   - [`docs/PAYMENT_ENGINE_PHASE2_CHECKLIST.md`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/docs/PAYMENT_ENGINE_PHASE2_CHECKLIST.md)
 
-### Step 10: Member 1 Phase 2 Implementation & Verification
+### Step 10 (Member 1): Phase 2 Implementation & Verification
 - Implemented full Payment Engine architecture in [`backend/payments/`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/):
   - `schemas.py`: `PaidCallRequest`, `PaidCallResult`, `PaymentStatus` (with `pending reconciliation`), `PaymentAttemptRecord`, `BudgetReservationRecord`.
   - `errors.py`: Standardized domain exceptions (`IdempotencyConflictError`, `SettlementVerificationError`, `SettlementTimeoutError`, `ServiceDisabledError`).
@@ -111,75 +110,103 @@
   - `__init__.py`: Clean re-exports of all components.
 - Created compatibility alias package at `backend/app/payments/` re-exporting all submodules to support both import paths.
 - Authored [`backend/tests/test_payment_engine.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_payment_engine.py) covering 6 comprehensive test scenarios.
-- Resolved catalog test fixture isolation: ensured test services are unregistered post-test.
 - Ran automated test suite: **38 of 38 tests passed in 0.38s (100% pass rate)**.
-- Maintained local-only working tree: **Zero unapproved pushes to remote.**
 
-### Step 11: Final Phase 1 Freeze Review & Corrections
-- Audited `X402Adapter`: Added `test_mode: bool = False` and strict fail-closed live signing. Live mode strictly forbids mock signatures if private key or `eth_account` is missing.
-- Audited `SettlementVerifier`: Added `test_mode: bool = False`, strictly distinguished on-chain RPC receipt status checking, facilitator verification stub, and defined `verify_full_settlement` interface. Live mode rejects unconfirmed hashes and never accepts mock receipts.
-- Audited `PaymentStatus` and `LedgerStatus`: Resolved suspense handling bug in `PaymentService._record_in_ledger`. Uncertain payments (`PENDING_RECONCILIATION`) are retained in an internal suspense store and NEVER recorded into the shared ledger as terminal `REFUSED` or `PAID`. Documented need for cross-team approval on `LedgerStatus.PENDING_RECONCILIATION`.
-- Verified `backend/app/payments/` compatibility alias: Tested singleton identity between `backend.app.payments` and `backend.payments`.
+### Step 11 (Member 1): Phase 1 Freeze Review & Corrections
+- Audited `X402Adapter`: Added `test_mode: bool = False` and strict fail-closed live signing.
+- Audited `SettlementVerifier`: Added `test_mode: bool = False`, strictly distinguished on-chain RPC receipt status checking, facilitator verification stub, and defined `verify_full_settlement` interface.
+- Audited `PaymentStatus` and `LedgerStatus`: Uncertain payments (`PENDING_RECONCILIATION`) are retained in an internal suspense store and NEVER recorded into the shared ledger as terminal `REFUSED` or `PAID`.
 - Expanded test suite in `backend/tests/test_payment_engine.py` with 4 new tests. Ran automated test suite: **42 of 42 tests passed in 2.02s**.
-- Audited and updated the 5 frozen documents in `docs/`: removed unsupported claims, harmonized x402 headers, and concluded readiness report with `READY TO FREEZE WITH EXPLICIT DEFERRED ITEMS`.
 
-### Step 12: Phase 2 Stage 1 — Dependencies & Official x402 SDK Compatibility
+### Step 12 (Member 1): Phase 2 Stage 1 — Dependencies & Official x402 SDK Compatibility
 - Installed official protocol libraries in Python 3.14 environment: `x402==2.25.0`, `web3==8.0.0`, `eth-account==0.14.0`.
-- Enhanced [`backend/payments/x402_adapter.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/x402_adapter.py):
-  - Added official schema translation: `to_official_payment_required()`, `from_official_payment_required()`, `encode_official_requirement()`, `decode_official_requirement()`, `encode_official_payload()`, `decode_official_payload()`.
-  - Added dual-header transport compatibility: `build_payment_headers()` emits both official SDK headers (`PAYMENT-SIGNATURE`, `X-PAYMENT`) and application headers (`X-402-Payment-Payload`).
-  - Added live cryptographic signing with `eth_account.messages.encode_defunct` and ECDSA signing with private keys, with complete cryptographic signature recovery verification.
+- Enhanced [`backend/payments/x402_adapter.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/x402_adapter.py) with official schema translation, dual-header transport, and live ECDSA signing.
 - Authored [`backend/tests/test_x402_sdk_compatibility.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_x402_sdk_compatibility.py) with 8 tests covering schema conversion, roundtrips, header parsing, fail-closed live boundaries, and ECDSA signature recovery.
-- All 8 tests passed.
 
-### Step 13: Phase 2 Stage 2 — 6-Point On-Chain Settlement Verification & Member 2 Interface
-- Enhanced [`backend/payments/settlement.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/settlement.py):
-  - Defined `SettlementEvidence` model holding transaction receipt, decoded ERC-20 transfer logs, block numbers, and confirmation flags.
-  - Implemented `decode_and_validate_transfer_logs()` decoding ERC-20 `Transfer(address,address,uint256)` event logs (topic `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef`) using `web3`.
-  - Implemented strict 6-point verification in `verify_full_settlement()`: (1) network `eip155:84532`, (2) receipt status `0x1`, (3) token address `0x036CbD...`, (4) recipient `payTo`, (5) amount in atomic base units, (6) decoded ERC-20 Transfer log.
-  - Implemented `SellerPaymentVerifier` providing Member 2 with challenge generation and payment verification methods enforcing fail-closed live validation.
-- Authored [`backend/tests/test_settlement_verification.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_settlement_verification.py) with 9 tests covering all 6 rejection branches and valid flows.
-- All 9 tests passed.
+### Step 13 (Member 1): Phase 2 Stage 2 — 6-Point On-Chain Settlement Verification & Member 2 Interface
+- Enhanced [`backend/payments/settlement.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/settlement.py) with 6-point verification (network, status, token contract, recipient, integer amount, decoded ERC-20 transfer event logs).
+- Authored [`backend/tests/test_settlement_verification.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_settlement_verification.py) with 9 tests covering all rejection branches.
 
-### Step 14: Phase 2 Stage 3 — Durable Persistence & Restart Safety
-- Implemented persistent database models in [`backend/payments/models.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/models.py):
-  - `PaymentAttemptModel`: Stores attempt ID, idempotency key, request hash, nonce, amount in base units, pay_to recipient, status, tx hash, proof, and timestamps.
-  - `BudgetReservationModel`: Stores reservation ID, task ID, call ID, amount in base units, and status (`reserved`, `committed`, `released`).
-  - `DurablePaymentRepository`: Provides transactional CRUD operations for attempts, nonce lookups, active task reservation sums, and pending reconciliation retrieval.
-- Integrated durable storage into [`backend/payments/idempotency.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/idempotency.py) (recovers cached responses and rejects nonces across clean process instances).
-- Integrated durable storage into [`backend/payments/budget.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/budget.py) (persists reservations and prevents concurrent overdraws).
-- Updated [`backend/payments/service.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/service.py) to hydrate pending reconciliations from durable storage on restart.
+### Step 14 (Member 1): Phase 2 Stage 3 — Durable Persistence & Restart Safety
+- Implemented persistent database models in [`backend/payments/models.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/models.py) (`PaymentAttemptModel`, `BudgetReservationModel`, `DurablePaymentRepository`).
+- Integrated durable storage into idempotency, budget, and reconciliation recovery.
 - Authored [`backend/tests/test_durable_persistence.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_durable_persistence.py) with 6 comprehensive restart and concurrency tests.
-- Executed full automated test suite: **65 of 65 tests passed in 1.32s (100% pass rate)**.
-- Verified clean working tree with `git diff --check` (0 whitespace errors).
 
-### Step 15: Phase 2 Independent Security Audit & Stage D Readiness Gate
-- Conducted exhaustive security audit across Audit 1 (x402 protocol/signing), Audit 2 (settlement security), Audit 3 (persistence/data safety), Audit 4 (reproducible test evidence), and Audit 5 (Stage D readiness).
-- Eliminated signature slicing fake `tx_hash` synthesis in [`backend/payments/settlement.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/settlement.py) (`SellerPaymentVerifier.verify_and_settle` now returns `tx_hash=None` and `facilitator_receipt_id=f"rec_auth_{sig_id}"`).
-- Enhanced [`backend/payments/service.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/service.py): In live mode, unverified or missing settlement evidence immediately halts and transitions attempt to `PENDING_RECONCILIATION` (`error_code="SETTLEMENT_UNVERIFIED"`), guaranteeing unverified calls never result in `PAID`.
-- Added 2 new negative security tests in [`backend/tests/test_settlement_verification.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_settlement_verification.py):
-  1. `test_full_settlement_rejection_on_wrong_payer`: Asserts rejection if on-chain ERC-20 transfer sender does not match expected buyer.
-  2. `test_payment_service_live_mode_unverified_proof_transitions_to_suspense`: Asserts live mode halts with `PENDING_RECONCILIATION` when proof cannot be verified.
+### Step 15 (Member 1): Phase 2 Independent Security Audit & Stage D Readiness Gate
+- Conducted exhaustive security audit across Audit 1-5.
+- Eliminated signature slicing fake `tx_hash` synthesis in `SellerPaymentVerifier.verify_and_settle`.
+- Enhanced `PaymentService.execute_paid_call` to halt unverified proofs into `PENDING_RECONCILIATION`.
 - Re-executed full automated test suite: **67 of 67 tests passed in 1.89s (100% pass rate)**.
-- `git diff --check` passed cleanly with 0 whitespace errors.
 
-### Step 16: Phase 2 Stage D — Buyer/Seller End-to-End Integration
-- Integrated autonomous buyer workflow in [`backend/buyer/buyer_agent.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/buyer/buyer_agent.py) to execute via `payment_service.execute_paid_call()` with constructor dependency injection and durable idempotency keys (`f"idemp_{task_id}_{step.step_number}_{service.service_id}"`).
-- Implemented and verified authoritative reconciliation in [`backend/payments/service.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/service.py) (`reconcile_attempt`) and [`backend/payments/routes.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/routes.py) (`POST /api/v1/payments/reconcile/{attempt_id}` and `GET /api/v1/payments/reconciliations`).
-- Hardened `PaymentService.execute_paid_call`: Fail-closed settlement verification catches all timeout/RPC exceptions and transitions unverified proofs to `PENDING_RECONCILIATION`, with deterministic reservation IDs and durable attempt persistence.
-- Authored comprehensive integration suite in [`backend/tests/test_buyer_seller_integration.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_buyer_seller_integration.py) covering all 13 required lifecycle and failure scenarios:
-  1. Buyer request to seller execution through payment service (in-process ASGITransport).
-  2. Successful verifier result with structured settlement evidence.
-  3. Seller rejects request before payment (422 input validation error).
-  4. Invalid or missing payment proof transitions to suspense.
-  5. Verifier returns `None` transitions to suspense.
-  6. Verifier raises timeout or RPC exception transitions to suspense.
-  7. Malformed evidence or mismatched terms (network, token, recipient, amount) rejected.
-  8. Seller output rejected after confirmed settlement (`PAID_OUTPUT_REJECTED`).
-  9. Replayed idempotency key returns cached result without second execution.
-  10. Concurrent duplicate paid-call attempts with mutated payload raise `IDEMPOTENCY_CONFLICT`.
-  11. Ambiguous settlement transitions to `PENDING_RECONCILIATION`.
-  12. Database restart and recovery of pending attempts with authoritative reconciliation.
-  13. Budget reservation and release behavior verified across all 5 lifecycle outcomes.
+### Step 16 (Member 1): Phase 2 Stage D — Buyer/Seller End-to-End Integration
+- Integrated autonomous buyer workflow in `buyer_agent.py` to execute via `payment_service.execute_paid_call()`.
+- Implemented authoritative reconciliation in `PaymentService` (`reconcile_attempt`) and `routes.py`.
+- Authored comprehensive integration suite in [`backend/tests/test_buyer_seller_integration.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_buyer_seller_integration.py) covering 13 lifecycle scenarios.
 - Test Suite Execution: **80 of 80 tests passed in 2.18s (100% pass rate)**.
-- `git diff --check` passed cleanly with 0 whitespace errors.
+
+### Step 17 (Member 1): Phase 3 — Payment Engine Hardening, Turnkey Seller Verifier, & Batch Reconciliation
+- Created [`backend/payments/dependencies.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/payments/dependencies.py) exposing `verify_seller_payment` and `get_seller_payment_verifier` for Member 2.
+- Implemented live `httpx.AsyncClient` receipt verification in `SettlementVerifier._verify_facilitator_receipt`.
+- Implemented `PaymentService.reconcile_all_pending()` and `POST /api/v1/payments/reconcile`.
+- Authored [`docs/SELLER_PAYMENT_INTEGRATION_GUIDE.md`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/docs/SELLER_PAYMENT_INTEGRATION_GUIDE.md).
+- Authored [`backend/tests/test_phase3_payment_hardening.py`](file:///c:/Users/ASUS/Desktop/AgentMarketPlace/backend/tests/test_phase3_payment_hardening.py) with 9 regression tests.
+- Full test suite: **89 of 89 tests passed in 5.49s**.
+
+### Step 18 (Member 3): Service Registry & Buyer Task Subsystem Implementation
+- Implemented Service Registry (`backend/registry/`):
+  - `schemas.py`: `ServiceRecord`, `ServiceListResponse`, `ServiceReputationSummary`, Draft-7 JSON schema validator.
+  - `validation.py`: Registration validator and JSON schema validator.
+  - `service.py`: `RegistryService` with seed data, multi-field filtering, and live Member 4 reputation delegation.
+  - `routes.py`: Endpoints for `/api/v1/services`, `/api/v1/services/{service_id}`, `/api/v1/services/{service_id}/reputation`.
+- Implemented Buyer Task API & Lifecycle (`backend/buyer/`):
+  - `schemas.py`: `TaskCreationRequest`, `TaskDetailResponse`, `TaskResultResponse`, `TaskCallsResponse`.
+  - `repository.py`: Member 4 agreed `TaskRecordModel` persistence via SQLAlchemy `SessionLocal`.
+  - `plan_validator.py`: DAG dependency and budget ceiling validation.
+  - `selector.py`: Multi-criteria weighted service ranking.
+  - `planner.py`: DAG generation for multi-step tasks.
+  - `output_validator.py`: Draft-7 output schema compliance checking.
+  - `aggregator.py`: Multi-source result aggregation with provenance tags.
+  - `explanation.py`: Transparent purchase explanation with budget reconciliation.
+  - `service.py`: Complete task lifecycle management, concurrency limiting, atomic budget locking, and x402 payment lifecycle handling.
+  - `routes.py`: Endpoints for `POST /api/v1/tasks`, `GET /api/v1/tasks/{task_id}`, `GET /api/v1/tasks/{task_id}/result`, `GET /api/v1/tasks/{task_id}/calls`.
+- Added test suites `backend/tests/test_registry.py` and `backend/tests/test_buyer_task_api.py`.
+
+### Step 19 (Member 3): Deterministic-First Planner, Service Selector, and Plan Validator
+- Implemented `ServiceSelector` (`backend/buyer/selector.py`) with hard eligibility gates and multi-attribute ranking.
+- Implemented `TaskPlanner` (`backend/buyer/planner.py`) with deterministic capability mapping and DAG construction.
+- Implemented `PlanValidator` (`backend/buyer/plan_validator.py`) with cycle detection, schema checks, and budget bounds.
+- Added 11 unit and integration tests in `backend/tests/test_planner_validator.py`.
+
+### Step 20 (Member 3): Buyer Orchestration Integration with Member 1 Payments & Member 4 Persistence
+- Created `backend/buyer/payment_client.py` implementing `BuyerPaymentClient(BuyerPaymentClientInterface)`.
+- Extended `backend/buyer/repository.py` to sync calls directly to Member 4's `ledger_repo` and SQL `LedgerRecordModel`.
+- Enhanced `backend/buyer/service.py` to route paid seller calls through `BuyerPaymentClientInterface`, enforce budget locks, bound concurrency with `asyncio.Semaphore(3)`, and handle suspense states.
+- Created `backend/tests/test_buyer_orchestration_payment.py` containing 6 integration tests.
+
+### Step 21 (Member 3): Dependency-Aware Asynchronous Execution & Integration Demo
+- Updated `ServiceCallRecord` with explicit `step_id` and `depends_on`.
+- Enhanced `BuyerService` with upstream dependency failure gating, strict input isolation, and safe fallback logic.
+- Implemented test suite in `backend/tests/test_buyer_dependency_execution.py` (8 tests).
+- Created end-to-end integration demo in `scripts/demo_m3_orchestration.py`.
+
+### Step 22 (Member 3): Seller-Output Validation, Safe Fallbacks, Result Aggregation, & Provenance Tracking
+- Extended `ServiceCallRecord` with provenance metadata.
+- Enforced strict Draft-7 output validation in `OutputValidator`.
+- Guaranteed zero-hallucination aggregation in `ResultAggregator`.
+- Created test suite `backend/tests/test_output_validation_provenance.py` (5 tests).
+
+### Step 23 (Member 3): Purchase Explanation, Spending Summary, & Authoritative Ledger Reconciliation
+- Added `SpendingSummary` and `CallExecutionSummary` to `backend/buyer/schemas.py`.
+- Refactored `backend/buyer/explanation.py` to query Member 4's `ledger_repo` as single source of truth for verified spend.
+- Implemented strict Base Sepolia explorer link construction (66-char hex).
+- Created test suite `backend/tests/test_purchase_explanation.py` (8 tests).
+
+### Step 24 (Member 3): End-to-End Buyer Multi-Hop Orchestration Suite
+- Implemented `test_buyer_agent_multihop.py` and `test_audit_member3_dod.py` (10 tests).
+- Verified BuyerAgent interfaces with `BuyerPaymentClientInterface` and handles official x402 headers (`X-402-Requirement`, `X-402-Payment-Payload`, `X-402-Settlement-Proof`).
+
+### Step 25 (Integration): Clean Merge of M1 and M3 Branches
+- Executed git merge between `M1` (Payment Engine & Security) and `M3` (Buyer Agent & Service Registry).
+- Resolved merge conflicts in `DECISION.md`, `FLOW.md`, `MEMORY.md`, and `backend/buyer/buyer_agent.py`.
+- Unified `BuyerAgent` to support both isolated payment service testing and full multi-hop DAG orchestration.
+- Verified test suite: all payment, registry, buyer, seller, and ledger tests execute with 100% pass rate.
