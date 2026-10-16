@@ -91,3 +91,24 @@
 - Created local branches: `feature/payments`, `feature/sellers`, `feature/buyer-registry`, `feature/dashboard-ledger`.
 - Added remote `https://github.com/RehanKwatla/AgentMarketPlace-.git`.
 - Pushed `main` and all 4 feature branches to GitHub successfully.
+
+### Step 9: Member 3 Service Registry & Buyer Task Subsystem Implementation
+- Implemented Service Registry (`backend/registry/`):
+  - `schemas.py`: `ServiceRecord`, `ServiceListResponse` (with sequence access support), `ServiceReputationSummary`, Draft-7 JSON schema validator.
+  - `validation.py`: Registration validator and JSON schema validator.
+  - `service.py`: `RegistryService` with seed data for Data (`data_001`), Scraping (`scraping_001`), and Inference (`inference_001`), multi-field filtering (`category`, `max_price_usdc`, `min_price_usdc`, `capability`, `q`, `is_active`, `enabled`), and live Member 4 reputation delegation.
+  - `routes.py`: Endpoints for `/api/v1/services`, `/api/v1/services/{service_id}`, `/api/v1/services/{service_id}/reputation`.
+- Implemented Buyer Task API & Lifecycle (`backend/buyer/`):
+  - `schemas.py`: `TaskCreationRequest` with non-floating point integer USDC conversion, `TaskDetailResponse`, `TaskResultResponse`, `TaskCallsResponse`.
+  - `repository.py`: Member 4 agreed `TaskRecordModel` persistence via SQLAlchemy `SessionLocal`.
+  - `plan_validator.py`: DAG dependency and budget ceiling validation.
+  - `selector.py`: Multi-criteria weighted service ranking.
+  - `planner.py`: DAG generation for multi-step tasks.
+  - `output_validator.py`: Draft-7 output schema compliance checking.
+  - `aggregator.py`: Multi-source result aggregation with provenance tags.
+  - `explanation.py`: Transparent purchase explanation with budget reconciliation.
+  - `service.py`: Complete task lifecycle management (`accepted` -> `planning` -> `running` -> `completed` / `refused`), concurrency limiting (`asyncio.Semaphore`), atomic budget lock/commit/release, and x402 payment lifecycle handling.
+  - `routes.py`: Endpoints for `POST /api/v1/tasks`, `GET /api/v1/tasks/{task_id}`, `GET /api/v1/tasks/{task_id}/result`, `GET /api/v1/tasks/{task_id}/calls`.
+- Added test suites `backend/tests/test_registry.py` and `backend/tests/test_buyer_task_api.py`.
+- Ran test suite: **44 of 44 tests passed (100% pass rate)**.
+

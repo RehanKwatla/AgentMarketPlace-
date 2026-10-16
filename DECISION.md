@@ -151,3 +151,21 @@ Frontend single-page applications (SPAs) bundle JavaScript that is readable by a
 ### 3. How It Works
 - `frontend/src/api/client.ts` calls backend routes.
 - No cryptographic libraries or private keys are present in `frontend/package.json`.
+
+---
+
+## Decision 9: Separation of Task Creation from Payment Execution & Model Alignment
+
+### 1. Context & Problem
+Premature payment execution upon task submission violates the principle of least privilege and atomic budgeting. If task parsing fails or budget constraints are violated during decomposition, any upfront payment is lost or requires complex refund reconciliation. Furthermore, multiple team members creating independent database tables leads to schema collisions.
+
+### 2. Theory & Logic
+- **Decoupled Planning vs. Execution:** Creating a task (`POST /api/v1/tasks`) with `execute_now: false` admits the request, verifies input syntax, converts budget to integer USDC atomic units without floats, and sets status to `accepted`.
+- **Member 4 Model Alignment:** Uses Member 4's single source of truth `TaskRecordModel` via SQLAlchemy ORM rather than introducing conflicting buyer tables.
+- **Verification Gates:** A task cannot reach `completed` until the service outputs pass strict Draft-7 JSON schema validation against the registered seller schema. If output fails, the task state transitions to `refused` or `failed` with zero funds committed for non-conforming responses.
+
+### 3. How It Works
+- `TaskRepository` persists task state to `TaskRecordModel`.
+- `BuyerService` coordinates atomic budget reservation with Member 1's `BudgetManager`.
+- Provenance and purchase explanation records capture all seller receipts and tx hashes transparently.
+
