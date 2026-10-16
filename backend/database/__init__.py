@@ -1,6 +1,6 @@
 """Database package owned by Member 4."""
 from .session import Base, engine, SessionLocal, get_db, init_db
-from .models import LedgerRecordModel, ServiceRecordModel, TaskRecordModel
+from .models import LedgerRecordModel, ServiceRecordModel, TaskRecordModel, SellerReputationModel
 
 __all__ = [
     "Base",
@@ -11,4 +11,6 @@ __all__ = [
     "LedgerRecordModel",
     "ServiceRecordModel",
     "TaskRecordModel",
+    "SellerReputationModel",
 ]
+

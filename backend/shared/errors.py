@@ -10,6 +10,19 @@ class AgentEconomyBaseException(Exception):
         super().__init__(self.message)
 
 
+class LedgerInconsistencyError(AgentEconomyBaseException):
+    def __init__(self, detail: str):
+        super().__init__(
+            f"Ledger inconsistency detected: {detail}",
+            error_code="LEDGER_INCONSISTENCY"
+        )
+
+
+class SettlementUnverifiedError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "Settlement evidence could not be verified."):
+        super().__init__(detail, error_code="SETTLEMENT_UNVERIFIED")
+
+
 class BudgetExceededError(AgentEconomyBaseException):
     def __init__(self, requested_units: int, available_units: int):
         super().__init__(

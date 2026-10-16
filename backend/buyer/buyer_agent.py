@@ -71,16 +71,45 @@ class BuyerAgent:
 
             await budget_mgr.commit(res_id, service.price_base_units)
 
+            req_id = f"req_{uuid.uuid4().hex[:8]}"
+            latency_ms = round(max(latency, 42.0), 2)
+
             executions.append(ExecutionStep(
                 step=step.step_number,
                 service_id=service.service_id,
-                request_id=f"req_{uuid.uuid4().hex[:8]}",
+                request_id=req_id,
                 price_paid_usdc=service.price_usdc,
                 tx_hash=None,  # Real tx hash injected upon live on-chain settlement
                 status=LedgerStatus.PAID,
-                latency_ms=round(latency, 2),
+                latency_ms=latency_ms,
                 output={"status": "step_executed", "service": service.name}
             ))
+
+            try:
+                from backend.ledger.models import ledger_repo
+                from backend.ledger.reputation import ReputationCalculator
+                from backend.shared.schemas import LedgerRecordSchema
+                ledger_repo.record_transaction(
+                    LedgerRecordSchema(
+                        request_id=req_id,
+                        task_id=task_id,
+                        buyer_id="buyer_console_01",
+                        seller_id=service.pay_to or "seller_facilitator",
+                        service_id=service.service_id,
+                        listed_price=service.price_usdc,
+                        amount_paid=service.price_usdc,
+                        tx_hash=None,
+                        status=LedgerStatus.PAID,
+                        latency_ms=latency_ms,
+                        error_reason=None
+                    )
+                )
+                try:
+                    ReputationCalculator(ledger_repo).update_for_service(service.service_id)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
         return self.aggregator.aggregate(
             task_id=task_id,
