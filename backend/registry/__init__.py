@@ -1,5 +1,19 @@
-"""Registry subsystem module owned by Member 3."""
-from .routes import router
-from .service_catalog import ServiceCatalog, catalog
+"""Service Registry Package Exports."""
+from backend.registry.schemas import (
+    ServiceRecord,
+    ServiceListResponse,
+    ServiceReputationSummary,
+    ServiceRegistrationRequest,
+)
+from backend.registry.service import RegistryService, registry_service
+from backend.registry.routes import router
 
-__all__ = ["router", "ServiceCatalog", "catalog"]
+__all__ = [
+    "ServiceRecord",
+    "ServiceListResponse",
+    "ServiceReputationSummary",
+    "ServiceRegistrationRequest",
+    "RegistryService",
+    "registry_service",
+    "router",
+]

@@ -176,3 +176,37 @@
 - Strictly enforced Zero Fabrication Rule: eliminated synthetic receipt generation; only authentic verifier-produced proof is attached to responses.
 - Hardened `ScrapingSellerInput` with SSRF protection, `InferenceSellerInput` with whitespace stripping and token bounding, and `DataSellerInput` with ticker validation.
 - Created `backend/tests/test_sellers_payment_integration.py` with 17 dedicated tests covering challenges, fail-closed boundaries, SSRF blocks, input bounds, verbatim proof attachment, and full buyer-seller handshake.
+
+---
+
+### Member 3 Milestones (Buyer & Registry)
+
+#### M3 - Step 11: Buyer Orchestration Integration with Member 1 Payments & Member 4 Persistence
+- Created `backend/buyer/payment_client.py` implementing `BuyerPaymentClient(BuyerPaymentClientInterface)` to handle EIP-712/x402 payment authorization generation and settlement proof verification via Member 1's facilitator/RPC.
+- Extended `backend/buyer/repository.py` with `record_call_to_ledger()` to sync calls directly to Member 4's `ledger_repo` and SQL `LedgerRecordModel`.
+- Enhanced `backend/buyer/service.py`:
+  - Routed every paid seller invocation through injected `BuyerPaymentClientInterface`.
+  - Enforced no transaction signing or direct payments in buyer service; strictly delegated to payment client.
+  - Handled uncertain payment outcomes by transitioning status to `CallStatus.PENDING_RECONCILIATION` and holding reserved budget.
+  - Persisted all status transitions to Member 4's ledger.
+- Created `backend/tests/test_buyer_orchestration_payment.py` containing 6 integration tests.
+
+#### M3 - Step 12: Dependency-Aware Asynchronous Execution & Integration Demo
+- Enhanced `backend/buyer/service.py`:
+  - Upstream dependency failure gate: Dependent calls verify that all upstream dependencies succeeded (`CallStatus.SUCCEEDED`) with valid outputs. If any dependency failed, dependent call is skipped (`FAILED_AND_NOT_CHARGED`).
+  - Strict input isolation conforming to Member 2's contracts (`DataSellerInput`, `ScrapingSellerInput`, `InferenceSellerInput`).
+  - Safe fallbacks: Fallbacks are strictly forbidden on ambiguous payments (`PENDING_RECONCILIATION`).
+  - Bounded concurrency with `asyncio.Semaphore(3)`.
+- Implemented comprehensive test suite in `backend/tests/test_buyer_dependency_execution.py` (8 tests).
+- Created end-to-end integration demo in `scripts/demo_m3_orchestration.py`.
+
+#### M3 - Step 13: Seller-Output Validation, Safe Fallbacks, Result Aggregation, & Provenance Tracking
+- Enhanced `backend/buyer/output_validator.py`: Enforced strict Content-Type checks, malformed JSON detection, and Draft-7 schema validation.
+- Enhanced `backend/buyer/aggregator.py`: Guaranteed zero-hallucination aggregation; only validated outputs (`CallStatus.SUCCEEDED`) are aggregated. Quarantined `CallStatus.PAID_OUTPUT_REJECTED`.
+- Created test suite `backend/tests/test_output_validation_provenance.py` (5 tests).
+
+#### M3 - Step 14: Purchase Explanation, Spending Summary, & Authoritative Ledger Reconciliation
+- Enhanced `backend/buyer/schemas.py`: Added `SpendingSummary` with 7 itemized fields and `CallExecutionSummary`.
+- Refactored `backend/buyer/explanation.py`: Injected `LedgerRepository` (Member 4's `ledger_repo`) as single source of truth for verified spending. Strict Base Sepolia explorer link construction (66-character hex).
+- Created test suite `backend/tests/test_purchase_explanation.py` (8 tests).
+

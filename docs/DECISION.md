@@ -337,3 +337,71 @@ Payment attempts, nonces, and budget holds must be backed by durable database ta
 - `DurablePaymentRepository` persists attempts atomically and tracks reservation lifecycle (`reserved` -> `committed` / `released`).
 - `IdempotencyStore` falls back to querying the database when an idempotency key or nonce is not found in memory.
 - `PaymentService.get_pending_reconciliations()` hydrates suspense records from `payment_attempts` table on startup.
+
+---
+
+## Decision 20: Deterministic-First DAG Planner, Hard Eligibility Gating, and Pre-Payment Plan Validation (Member 3)
+
+### 1. Context & Problem
+In agentic commerce systems, planning without validation leads to hallucinated endpoints, budget overruns, cycles in execution graphs, and payment commitments for invalid or disabled services.
+
+### 2. Theory & Logic
+- **Hard Eligibility Gating:** A candidate service is never ranked unless it passes ALL hard eligibility gates first: active/enabled status, trusted registry origin, valid 42-char hex `pay_to` address, Base Sepolia network (`eip155:84532`), Base Sepolia USDC token (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`), positive atomic price within budget, and valid Draft-7 input/output schemas.
+- **Explicit DAG Architecture:** Multi-step workflows requiring Scraping, Data, and Inference are modeled as explicit Directed Acyclic Graphs (DAGs) partitioned into topological execution stages. Independent tasks execute in parallel in Stage 0, while dependent tasks execute in Stage 1.
+- **Authoritative Price Enforcement:** All prices, recipient addresses, and endpoints are resolved strictly from server-side registry records.
+
+### 3. How It Works
+- `ServiceSelector.check_eligibility()` filters candidates, and `rank_candidates()` scores remaining eligible candidates via multi-attribute utility.
+- `TaskPlanner.create_plan()` generates an `ExecutionPlan` with dependency graph, topological stages, expected and worst-case cost, fallback allowances, and selection reasons.
+- `PlanValidator.validate_plan()` rigorously checks DAG acyclicity, schema compliance via `Draft7Validator`, authoritative server-side registry resolution, and concurrency limits.
+
+---
+
+## Decision 21: End-to-End Buyer Orchestration Integration with Member 1 Payments & Member 4 Persistence (Member 3)
+
+### 1. Context & Problem
+The Buyer agent cannot operate in a silo. Every paid invocation must interface with Member 1's payment engine (`BuyerPaymentClientInterface`, `PaymentPolicyVerifier`, `BudgetManager`, `SettlementVerifier`) and record immutable transaction history in Member 4's ledger repository.
+
+### 2. Theory & Logic
+- **Delegated Cryptographic Authorization:** The buyer layer (`BuyerService`) never handles private keys or signs transactions directly. Instead, it delegates payload creation to `BuyerPaymentClientInterface.create_payment_payload` and settlement verification to `BuyerPaymentClientInterface.verify_settlement`.
+- **Atomic Concurrency Bounding:** `BudgetManager.reserve_budget` locks funds under an `asyncio.Lock` prior to challenge negotiation. Concurrent stage calls are bounded by an `asyncio.Semaphore(3)`.
+- **Strict Settlement Evidence Gates:** Calls are marked `PAID` *only* if the seller returns verified settlement evidence (facilitator receipt or on-chain tx hash). If the seller returns HTTP 200 without valid settlement evidence, or if the network times out after payment authorization was dispatched, the call immediately transitions to `PENDING_RECONCILIATION`.
+- **Member 4 Persistence Synchronization:** Every call status transition (`paid`, `paid output rejected`, `refused`, `failed and not charged`, `pending reconciliation`) is recorded to Member 4's `ledger_repo`.
+
+---
+
+## Decision 22: Dependency-Aware Asynchronous Execution, Strict Input Isolation, & Safe Fallbacks (Member 3)
+
+### 1. Context & Problem
+In complex agent workflows requiring Data, Scraping, and Inference, running dependent calls before upstream outputs exist causes runtime failures. If an upstream dependency fails, executing downstream calls wastes payments.
+
+### 2. Theory & Logic
+- **Topological & Dependency Gating:** Stage 0 executes independent calls (Data & Scraping) concurrently bounded by `asyncio.Semaphore(3)`. Stage 1 (Inference) depends on Stage 0. Prior to reserving budget or executing a dependent call, the buyer checks that all upstream dependencies succeeded (`CallStatus.SUCCEEDED`) and produced valid outputs. If any upstream dependency failed, the dependent call is skipped (`FAILED_AND_NOT_CHARGED`) with zero funds spent.
+- **Strict Input Isolation:** Each seller receives only the validated fields defined by Member 2's contracts (`DataSellerInput`, `ScrapingSellerInput`, `InferenceSellerInput`).
+- **Two-Phase Fallback Safety:** Fallbacks are **STRICTLY FORBIDDEN** if the primary call resulted in an uncertain payment outcome (`PENDING_RECONCILIATION`). If the primary call failed with a clean non-payment error, the budget reservation is released, and the fallback price is checked against available budget before executing.
+
+---
+
+## Decision 23: Seller-Output Schema Validation, Transparent Aggregation, & Field-Level Provenance (Member 3)
+
+### 1. Context & Problem
+In a decentralized pay-per-call agent economy, sellers may return responses with invalid content types or corrupted JSON. When micropayments settle on-chain but delivered outputs are invalid, the buyer cannot silently erase the cost or report failure as success.
+
+### 2. Theory & Logic
+- **Rigorous Draft-7 Schema Validation:** `OutputValidator` validates raw responses against the exact Draft-7 output JSON Schema registered for the seller version.
+- **Irrevocable Cost Accounting (`PAID_OUTPUT_REJECTED`):** When payment is verified by Member 1's `SettlementVerifier` but schema validation fails, the status is set to `CallStatus.PAID_OUTPUT_REJECTED`. The on-chain `tx_hash` and `amount_paid_usdc` are permanently preserved in the ledger and task record.
+- **Zero-Hallucination Result Aggregation:** `ResultAggregator` aggregates ONLY validated outputs from `CallStatus.SUCCEEDED` calls into `market_data`, `web_sources`, and `summary`.
+- **Deterministic Field-Level & Result-Level Provenance:** Every aggregated finding is explicitly linked in a `provenance` record specifying: `target_field`, `service_id`, `call_id`, `step_id`, `category`, `schema_version`, `timestamp`, `payment_reference`, and `validation_status: "valid"`.
+
+---
+
+## Decision 24: Authoritative Ledger Reconciliation, Itemized Spending Summaries, & Non-Fabricated Explorer Links (Member 3)
+
+### 1. Context & Problem
+Users and auditors require transparent explanations of every micropayment. If the buyer agent derives verified spending from local in-memory counters or planned prices, discrepancies emerge between the buyer's reported total and Member 4's authoritative audit ledger.
+
+### 2. Theory & Logic
+- **Authoritative Ledger Reconciliation:** `ExplanationGenerator` queries Member 4's `ledger_repo` for every service call record. Verified spending is calculated exclusively from ledger records with verified settlement proofs in terminal states (`paid` or `paid output rejected`).
+- **Seven-Part Itemized Spending Accounting:** Pure integer base-unit arithmetic guarantees exact precision across `budget_allocated_usdc`, `estimated_cost_usdc`, `verified_spent_usdc`, `reserved_budget_usdc`, `uncertain_pending_usdc`, `refunded_amount_usdc`, and `remaining_budget_usdc`.
+- **Strict Explorer Link Validation (Zero Fabrication):** Base Sepolia explorer links (`https://sepolia.basescan.org/tx/{tx_hash}`) are generated strictly when a verified 66-character hex hash starting with `0x` is present. Placeholder tokens or mock strings return `None`.
+
