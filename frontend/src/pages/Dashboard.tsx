@@ -9,6 +9,9 @@ import { TaskResultsView } from '../components/TaskResultsView';
 import { ReputationDashboardView } from '../components/ReputationDashboardView';
 import { SellerToolsView } from '../components/SellerToolsView';
 import { AboutProtocolView } from '../components/AboutProtocolView';
+import { AgentIntegrationWidget } from '../components/AgentIntegrationWidget';
+import { ServiceLeaderboard } from '../components/ServiceLeaderboard';
+import { ServiceExplorerView } from '../components/ServiceExplorerView';
 
 import { 
   fetchHealth, 
@@ -33,11 +36,11 @@ import {
   ArrowRight, 
   Layers, 
   Send, 
-  FileText, 
   ShieldCheck, 
   AlertCircle, 
   RefreshCw,
-  Cpu
+  Cpu,
+  PlusCircle
 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
@@ -98,7 +101,6 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    // Refresh ledger and service health periodically without disruptive UI flicker
     const timer = setInterval(() => loadData(true), 8000);
     return () => clearInterval(timer);
   }, []);
@@ -147,7 +149,6 @@ export const Dashboard: React.FC = () => {
       const steps: PlannedStepEstimate[] = [];
       let stepCounter = 1;
 
-      // Heuristic alignment matching backend/buyer/task_planner.py
       if (['market', 'price', 'eth', 'btc', 'financial', 'volume'].some(w => promptLower.includes(w))) {
         steps.push({
           step_number: stepCounter++,
@@ -168,7 +169,6 @@ export const Dashboard: React.FC = () => {
         });
       }
 
-      // Always include inference/summary if requested or as aggregation step
       if (['summarize', 'analyze', 'infer', 'synthesize', 'takeaway'].some(w => promptLower.includes(w)) || steps.length === 0) {
         steps.push({
           step_number: stepCounter++,
@@ -208,10 +208,8 @@ export const Dashboard: React.FC = () => {
     try {
       const result = await submitBuyerTask(taskPrompt, budgetUsdc);
       setTaskResult(result);
-      setTaskPlan(null); // Close confirmation modal
-      // Refresh registry & ledger
+      setTaskPlan(null);
       await loadData(true);
-      // Switch view to display results or keep on console
       if (activeTab !== 'task-console') {
         setActiveTab('task-console');
       }
@@ -222,7 +220,6 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  // View specific ledger record from task results
   const handleInspectLedgerRecord = async (requestId: string) => {
     try {
       const rec = ledger.find(r => r.request_id === requestId);
@@ -237,7 +234,6 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  // Select a service from marketplace to use in Buyer Console
   const handleUseServiceInConsole = (service: ServiceDefinition) => {
     setTaskPrompt(`Query ${service.name} (${service.service_id}) and extract actionable insights`);
     setActiveTab('task-console');
@@ -265,12 +261,12 @@ export const Dashboard: React.FC = () => {
         setActiveTab={setActiveTab}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
+        onOpenRegister={() => setActiveTab('seller-tools')}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
-        {/* Backend Connectivity Error Alert */}
         {fetchError && (
           <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-500/40 text-rose-300 text-xs font-mono flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -287,49 +283,48 @@ export const Dashboard: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB A: MARKETPLACE HOME */}
+        {/* TAB A: AGENTIC MARKETPLACE HOME */}
         {/* ========================================================================= */}
         {activeTab === 'marketplace' && (
-          <div className="space-y-8 animate-fadeIn">
+          <div className="space-y-10 animate-fadeIn">
             {/* Hero Section */}
             <section className="relative overflow-hidden rounded-2xl glass-panel p-8 sm:p-10 border border-slate-800/80 bg-gradient-to-b from-slate-900/80 via-slate-950/70 to-slate-950">
               <div className="max-w-3xl space-y-4">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400">
                   <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                  <span>Autonomous Microservice Economy</span>
+                  <span>x402 Agent Marketplace</span>
                   <span className="text-slate-600">|</span>
-                  <span className="text-slate-400">Base Sepolia Testnet</span>
+                  <span className="text-slate-400">Base Sepolia (eip155:84532)</span>
                 </div>
 
-                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
-                  Discover Services. <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-400">
-                    Pay Per Call via x402.
-                  </span> <br />
-                  Inspect Every Settlement.
+                <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+                  Discover. Pay. <br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-violet-400">
+                    Get Results.
+                  </span>
                 </h1>
 
                 <p className="text-slate-400 text-sm leading-relaxed font-sans max-w-2xl">
-                  A high-integrity agent marketplace where autonomous buyers decompose goals, 
-                  settle micropayments over HTTP 402 with signed EIP-712 authorizations, 
-                  and write verified proof to an immutable audit ledger.
+                  Thousands of microservices for autonomous agents with zero API keys. 
+                  Every call settles instantly over the official x402 v2 challenge-response protocol 
+                  denominated in Base Sepolia USDC.
                 </p>
 
                 <div className="pt-2 flex flex-wrap items-center gap-3">
                   <button
-                    onClick={() => setActiveTab('task-console')}
+                    onClick={() => setActiveTab('explorer')}
                     className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-mono font-bold text-xs uppercase tracking-wide transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2"
                   >
-                    <span>Launch Buyer Task Console</span>
+                    <span>Explore Marketplace</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
 
                   <button
-                    onClick={() => setActiveTab('ledger')}
+                    onClick={() => setActiveTab('seller-tools')}
                     className="px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-mono text-xs font-semibold transition-colors border border-slate-800 flex items-center gap-2"
                   >
-                    <FileText className="w-4 h-4 text-slate-400" />
-                    <span>View Audit Ledger</span>
+                    <PlusCircle className="w-4 h-4 text-blue-400" />
+                    <span>Publish a Service</span>
                   </button>
                 </div>
               </div>
@@ -337,11 +332,11 @@ export const Dashboard: React.FC = () => {
               {/* Verified Platform Metrics */}
               <div className="mt-8 pt-6 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
-                  <span className="text-[11px] font-mono text-slate-500 uppercase block">Registered Services</span>
+                  <span className="text-[11px] font-mono text-slate-500 uppercase block">Registered Providers</span>
                   <span className="text-xl font-bold font-mono text-white mt-0.5 block">{services.length} Active</span>
                 </div>
                 <div>
-                  <span className="text-[11px] font-mono text-slate-500 uppercase block">Total Calls Processed</span>
+                  <span className="text-[11px] font-mono text-slate-500 uppercase block">Total Transactions</span>
                   <span className="text-xl font-bold font-mono text-blue-400 mt-0.5 block">{ledger.length}</span>
                 </div>
                 <div>
@@ -349,73 +344,104 @@ export const Dashboard: React.FC = () => {
                   <span className="text-xl font-bold font-mono text-emerald-400 mt-0.5 block">{settledCount}</span>
                 </div>
                 <div>
-                  <span className="text-[11px] font-mono text-slate-500 uppercase block">Total Verified Spend</span>
+                  <span className="text-[11px] font-mono text-slate-500 uppercase block">Payment Volume</span>
                   <span className="text-xl font-bold font-mono text-emerald-400 mt-0.5 block">{totalVerifiedSpend} USDC</span>
                 </div>
               </div>
             </section>
 
-            {/* Featured Workflow Bundles (Examples) */}
-            <section className="space-y-3">
+            {/* Connect Your Agent Widget */}
+            <AgentIntegrationWidget />
+
+            {/* Service Leaderboard Section */}
+            <ServiceLeaderboard
+              services={services}
+              reputations={reputations}
+              onSelectService={(s) => setSelectedService(s)}
+            />
+
+            {/* Featured Multi-Agent Workflows & Bundles */}
+            <section className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono">
-                    Featured Autonomous Bundles (Examples)
+                  <h3 className="text-base font-bold text-white font-sans">
+                    Featured Multi-Agent Workflows
                   </h3>
+                  <p className="text-xs text-slate-400">Autonomous pipelines configured to run end-to-end</p>
                 </div>
-                <span className="text-[11px] text-slate-500 font-mono">Real pipeline recipes</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div 
-                  className="glass-panel p-4 rounded-xl border border-slate-800 hover:border-slate-700 cursor-pointer transition-all bg-slate-900/40"
-                  onClick={() => {
-                    setTaskPrompt('Collect market data on ETH and summarize key metrics');
-                    setActiveTab('task-console');
-                  }}
-                >
-                  <div className="flex items-center justify-between text-xs font-mono mb-2">
-                    <span className="text-cyan-400 font-semibold uppercase">Market Briefing</span>
-                    <span className="text-emerald-400 font-bold">~0.006 USDC</span>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="glass-panel p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <span className="text-[11px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                      Market Research
+                    </span>
+                    <h4 className="text-base font-bold text-white mt-1">Financial Data & Key Metrics</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                      Pulls market metrics through Data Provider and synthesizes structured bullet points via Inference.
+                    </p>
                   </div>
-                  <h4 className="text-sm font-bold text-white mb-1">Financial Data & Analysis</h4>
-                  <p className="text-xs text-slate-400 line-clamp-2">
-                    Pulls latest ticker metrics via Data Provider and produces structured bulleted takeaways via Inference.
-                  </p>
+                  <div className="pt-4 mt-4 border-t border-slate-800/80 flex items-center justify-between">
+                    <span className="text-emerald-400 font-mono font-bold text-xs">~0.006 USDC</span>
+                    <button
+                      onClick={() => {
+                        setTaskPrompt('Collect market data on ETH and summarize key metrics');
+                        setActiveTab('task-console');
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-bold transition-colors"
+                    >
+                      Run Workflow
+                    </button>
+                  </div>
                 </div>
 
-                <div 
-                  className="glass-panel p-4 rounded-xl border border-slate-800 hover:border-slate-700 cursor-pointer transition-all bg-slate-900/40"
-                  onClick={() => {
-                    setTaskPrompt('Scrape latest ethereum updates and extract technical highlights');
-                    setActiveTab('task-console');
-                  }}
-                >
-                  <div className="flex items-center justify-between text-xs font-mono mb-2">
-                    <span className="text-amber-300 font-semibold uppercase">Web Synthesis</span>
-                    <span className="text-emerald-400 font-bold">~0.007 USDC</span>
+                <div className="glass-panel p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <span className="text-[11px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      Web Data Collection
+                    </span>
+                    <h4 className="text-base font-bold text-white mt-1">Web Scraping & Extraction</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                      Crawls documentation URLs through Scraping Seller and summarizes technical findings via Inference.
+                    </p>
                   </div>
-                  <h4 className="text-sm font-bold text-white mb-1">Live Web Scraping & Extract</h4>
-                  <p className="text-xs text-slate-400 line-clamp-2">
-                    Crawls target documentation via Scraping Seller and structures executive highlights via Inference.
-                  </p>
+                  <div className="pt-4 mt-4 border-t border-slate-800/80 flex items-center justify-between">
+                    <span className="text-emerald-400 font-mono font-bold text-xs">~0.007 USDC</span>
+                    <button
+                      onClick={() => {
+                        setTaskPrompt('Scrape latest web updates and extract technical highlights');
+                        setActiveTab('task-console');
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-bold transition-colors"
+                    >
+                      Run Workflow
+                    </button>
+                  </div>
                 </div>
 
-                <div 
-                  className="glass-panel p-4 rounded-xl border border-slate-800 hover:border-slate-700 cursor-pointer transition-all bg-slate-900/40"
-                  onClick={() => {
-                    setTaskPrompt('Synthesize recent macroeconomic indicators and generate predictions');
-                    setActiveTab('task-console');
-                  }}
-                >
-                  <div className="flex items-center justify-between text-xs font-mono mb-2">
-                    <span className="text-purple-400 font-semibold uppercase">Deep Reasoning</span>
-                    <span className="text-emerald-400 font-bold">~0.004 USDC</span>
+                <div className="glass-panel p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <span className="text-[11px] uppercase font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      Text Analysis
+                    </span>
+                    <h4 className="text-base font-bold text-white mt-1">Direct Inference Reasoning</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                      Dispatches natural language prompts directly to the Inference Microservice with deterministic schemas.
+                    </p>
                   </div>
-                  <h4 className="text-sm font-bold text-white mb-1">Direct Inference Microservice</h4>
-                  <p className="text-xs text-slate-400 line-clamp-2">
-                    Runs multi-token inference with deterministic JSON output and prompt token validation.
-                  </p>
+                  <div className="pt-4 mt-4 border-t border-slate-800/80 flex items-center justify-between">
+                    <span className="text-emerald-400 font-mono font-bold text-xs">~0.004 USDC</span>
+                    <button
+                      onClick={() => {
+                        setTaskPrompt('Synthesize recent macroeconomic indicators and generate predictions');
+                        setActiveTab('task-console');
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-bold transition-colors"
+                    >
+                      Run Workflow
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -429,7 +455,6 @@ export const Dashboard: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-                  {/* Category Filter */}
                   <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5">
                     {['all', 'data', 'scraping', 'inference'].map(cat => (
                       <button
@@ -446,7 +471,6 @@ export const Dashboard: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Sort Filter */}
                   <select
                     value={sortBy}
                     onChange={(e: any) => setSortBy(e.target.value)}
@@ -498,12 +522,38 @@ export const Dashboard: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
+        {/* TAB: SERVICE EXPLORER */}
+        {/* ========================================================================= */}
+        {activeTab === 'explorer' && (
+          <div className="animate-fadeIn">
+            <ServiceExplorerView
+              services={services}
+              reputations={reputations}
+              onSelectService={(s) => setSelectedService(s)}
+              onRunService={handleUseServiceInConsole}
+            />
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB: LEADERBOARD */}
+        {/* ========================================================================= */}
+        {activeTab === 'leaderboard' && (
+          <div className="animate-fadeIn">
+            <ServiceLeaderboard
+              services={services}
+              reputations={reputations}
+              onSelectService={(s) => setSelectedService(s)}
+            />
+          </div>
+        )}
+
+        {/* ========================================================================= */}
         {/* TAB B: BUYER TASK CONSOLE */}
         {/* ========================================================================= */}
         {activeTab === 'task-console' && (
           <div className="space-y-8 animate-fadeIn">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Left Column: Task Input & Planning Form */}
               <div className="lg:col-span-5 space-y-6">
                 <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-5">
                   <div>
@@ -549,9 +599,8 @@ export const Dashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Pre-canned Example Prompts */}
                     <div>
-                      <span className="text-[11px] font-mono text-slate-500 block mb-1.5 uppercase">Quick Examples:</span>
+                      <span className="text-[11px] font-mono text-slate-500 block mb-1.5 uppercase">Quick Presets:</span>
                       <div className="flex flex-wrap gap-1.5">
                         <button
                           type="button"
@@ -603,7 +652,6 @@ export const Dashboard: React.FC = () => {
                   </form>
                 </div>
 
-                {/* Safety Protocol Banner */}
                 <div className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800 text-xs font-mono space-y-2 text-slate-400">
                   <div className="flex items-center gap-2 text-white font-semibold">
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -617,7 +665,6 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Right Column: Execution Output & Active Results */}
               <div className="lg:col-span-7">
                 {taskResult ? (
                   <TaskResultsView
@@ -724,34 +771,41 @@ export const Dashboard: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/80 py-6 text-xs text-slate-500 font-mono mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-slate-400">DI-06 Pay-Per-Call Agent Economy</span>
-            <span>—</span>
-            <span>Base Sepolia USDC Testnet</span>
+      <footer className="border-t border-slate-800/80 bg-slate-950/80 py-8 text-xs text-slate-500 font-mono mt-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
+              <span className="text-white font-bold tracking-tight">Agentic Market</span>
+              <span className="text-slate-600">|</span>
+              <span className="text-slate-400">DISCOVER → PAY → GET RESULTS</span>
+            </div>
+
+            <div className="flex items-center gap-4 text-slate-400">
+              <button onClick={() => setActiveTab('about')} className="hover:text-white transition-colors">
+                About & Docs
+              </button>
+              <span>•</span>
+              <button onClick={() => setActiveTab('seller-tools')} className="hover:text-white transition-colors">
+                Seller Tools
+              </button>
+              <span>•</span>
+              <button onClick={() => setActiveTab('ledger')} className="hover:text-white transition-colors">
+                Audit Ledger
+              </button>
+              <span>•</span>
+              <span className="text-slate-600">x402 Protocol v2.0</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-400">
-            <button onClick={() => setActiveTab('about')} className="hover:text-white transition-colors">
-              Protocol Specs
-            </button>
-            <span>•</span>
-            <button onClick={() => setActiveTab('seller-tools')} className="hover:text-white transition-colors">
-              Seller Onboarding
-            </button>
-            <span>•</span>
-            <span className="text-slate-600">x402 v2.0 Standard</span>
+          <div className="pt-3 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500">
+            <p>Runs on Base Sepolia testnet (eip155:84532) using testnet USDC. Micropayments settle cryptographically per call.</p>
+            <p className="font-mono">DI-06 Pay-Per-Call Agent Economy</p>
           </div>
         </div>
       </footer>
 
-      {/* ========================================================================= */}
-      {/* INTERACTIVE INSPECTION MODALS */}
-      {/* ========================================================================= */}
-      
-      {/* 1. Service Detail Inspection Modal */}
+      {/* Interactive Modals */}
       <ServiceDetailModal
         service={selectedService}
         reputation={selectedService ? reputations[selectedService.service_id] : undefined}
@@ -759,13 +813,11 @@ export const Dashboard: React.FC = () => {
         onUseInTask={handleUseServiceInConsole}
       />
 
-      {/* 2. Ledger Record Deep Dive Modal */}
       <LedgerDetailModal
         record={selectedLedgerRecord}
         onClose={() => setSelectedLedgerRecord(null)}
       />
 
-      {/* 3. Task Plan Preview & Confirmation Modal */}
       <TaskPlanPreviewModal
         plan={taskPlan}
         onConfirm={handleExecuteConfirmedTask}
