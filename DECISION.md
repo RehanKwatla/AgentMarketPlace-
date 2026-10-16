@@ -151,3 +151,137 @@ Frontend single-page applications (SPAs) bundle JavaScript that is readable by a
 ### 3. How It Works
 - `frontend/src/api/client.ts` calls backend routes.
 - No cryptographic libraries or private keys are present in `frontend/package.json`.
+
+---
+
+## Decision 9: Dual Package Namespace Compatibility (`backend/payments/` & `backend/app/payments/`)
+
+### 1. Context & Problem
+The root implementation plan specified `backend/app/payments/` while the existing repository codebase placed payment modules at `backend/payments/`, imported extensively across `main.py`, `buyer_agent.py`, and the test suite. Breaking existing import paths would invalidate tests and team coordination.
+
+### 2. Theory & Logic
+- Implement the primary canonical implementation in `backend/payments/`.
+- Create a pure re-exporting compatibility package at `backend/app/payments/`.
+- Any team member or script importing from either `backend.payments` or `backend.app.payments` resolves identical singleton classes and instances.
+
+### 3. How It Works
+- `backend/app/payments/service.py` executes `from backend.payments.service import *`.
+- All submodules (`schemas`, `errors`, `policy`, `budget`, `idempotency`, `x402_adapter`, `settlement`) are aliased 1-to-1 with zero duplicated business logic.
+
+---
+
+## Decision 10: Five-State Payment Lifecycle with Suspense (`pending reconciliation`)
+
+### 1. Context & Problem
+If an HTTP client transmits an EIP-712 payment authorization to a seller and a network timeout occurs before receiving the HTTP response, the payment may have successfully settled on-chain. Marking this immediately as `failed and not charged` and releasing the budget would cause double-spending or financial unaccountability.
+
+### 2. Theory & Logic
+- Introduce an explicit suspense state: `pending reconciliation`.
+- When an operation times out after payload transmission, budget reservations are **held** rather than released.
+- The attempt is queued for reconciliation against the Base Sepolia RPC or x402 facilitator before any subsequent retry.
+
+### 3. How It Works
+- `SettlementTimeoutError` is intercepted in `PaymentService.execute_paid_call()`.
+- Result status is set to `PaymentStatus.PENDING_RECONCILIATION`.
+- `SettlementVerifier.reconcile_uncertain_attempt()` provides the query path to recheck on-chain receipts without issuing duplicate transactions.
+
+---
+
+## Decision 11: Decoupled x402 Adapter with Strict Fail-Closed Live Signing and Test-Only Fallback
+
+### 1. Context & Problem
+Running automated tests on developer machines or offline CI pipelines without Base Sepolia RPC credentials or gas funds must pass reliably, but live payment execution must never fabricate signatures or proceed without authentic cryptographic keys.
+
+### 2. Theory & Logic
+- **Fail-Closed Security Boundary:** In live production/testnet mode (`test_mode=False`), `X402Adapter` strictly requires a valid 66-character `BUYER_PRIVATE_KEY` and the `eth_account` library. If either is missing, it fails closed immediately (`PaymentEngineError`).
+- Deterministic mock signatures (`0x_mock_sig_...`) are strictly gated behind `test_mode=True`. Mock signatures are never presented as valid live payment authorizations.
+
+### 3. How It Works
+- `X402Adapter(test_mode=True)` generates deterministic mock signatures bound to the challenge nonce for unit tests.
+- `X402Adapter(test_mode=False)` signs live ECDSA messages or halts execution.
+- Tests verify both fail-closed live rejection and deterministic offline signing.
+
+---
+
+## Decision 12: Canonical SHA-256 Request Hashing for Idempotency Collision Prevention
+
+### 1. Context & Problem
+A naive idempotency check only looks up the string `idempotency_key`. If a caller reuses the same key with a *different* service or request payload (either accidentally or maliciously), returning the cached result of the previous call leads to silent data corruption.
+
+### 2. Theory & Logic
+- Bind the client `idempotency_key` to a canonical SHA-256 hash of the JSON payload.
+- Keys must enforce key-to-payload integrity.
+
+### 3. How It Works
+- `compute_payload_hash(payload)` serializes dictionaries with sorted keys and compact separators.
+- If `key` exists and hash matches: return cached result.
+- If `key` exists and hash differs: immediately raise `IdempotencyConflictError` (`HTTP 409`).
+
+---
+
+## Decision 13: Suspense Ledger Isolation (Safe Non-Terminal Handling for Uncertain Payments)
+
+### 1. Context & Problem
+The shared `LedgerStatus` enum in `backend/shared/constants.py` defines only four terminal statuses (`paid`, `paid output rejected`, `refused`, `failed and not charged`). If a timed-out attempt (`pending reconciliation`) was written to the shared ledger as `refused`, an uncertain in-flight payment where funds may have settled on-chain would be recorded falsely as a terminal failure with zero funds paid.
+
+### 2. Theory & Logic
+- Uncertain payments must never be recorded as terminal failures or terminal successes in the shared ledger.
+- The Payment Engine manages an internal suspense store (`self._pending_reconciliations`) and holds the budget reservation until definitive on-chain reconciliation occurs.
+- Adding `PENDING_RECONCILIATION` to the shared `LedgerStatus` requires cross-team coordination with Setup Lead and Member 4 (tracked as an explicit Phase 1 deferred item / blocker).
+
+### 3. How It Works
+- When `SettlementTimeoutError` occurs, `PaymentService` skips writing to `ledger_repo` and preserves the attempt record in `self._pending_reconciliations`.
+- Query helpers `get_pending_reconciliations()` and `get_pending_reconciliation()` expose suspense records.
+- When on-chain confirmation or definitive failure is verified in Phase 2, the resolved terminal status is written to the shared ledger.
+
+---
+
+## Decision 14: Dual-Header Support for Official x402 SDK & Application Interoperability
+
+### 1. Context & Problem
+Official x402 SDK (v2.25.0) uses HTTP headers such as `PAYMENT-REQUIRED` (or `X-PAYMENT`), `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE` with Base64-encoded JSON payloads. Existing application sellers use `X-402-Requirement`, `X-402-Payment-Payload`, and `X-402-Settlement-Proof`. Dropping either breaks backward compatibility or official SDK clients.
+
+### 2. Theory & Logic
+The adapter must bridge both standards simultaneously without forcing unilateral breaking changes on other team members.
+
+### 3. How It Works
+- `X402Adapter.build_payment_headers()` emits BOTH official SDK headers (`PAYMENT-SIGNATURE`, `X-PAYMENT`) and application headers (`X-402-Payment-Payload`).
+- `parse_challenge_from_headers()` accepts either `PAYMENT-REQUIRED`, `X-PAYMENT`, or `X-402-Requirement`.
+- `extract_settlement_proof()` checks `PAYMENT-RESPONSE`, `X-PAYMENT-RESPONSE`, and `X-402-Settlement-Proof`.
+
+---
+
+## Decision 15: Strict 6-Point On-Chain Settlement Verification & ERC-20 Transfer Log Decoding
+
+### 1. Context & Problem
+A transaction hash alone (`0x...`) or receipt status `0x1` does not prove payment settlement. A reverted transaction, a transaction on the wrong network, a transfer of a worthless custom token, or a transfer to the wrong recipient would all register as valid if only receipt existence was checked.
+
+### 2. Theory & Logic
+Settlement verification must enforce a comprehensive 6-point cryptographic and on-chain log audit:
+1. Target CAIP-2 network check (`eip155:84532`).
+2. Receipt execution status check (`status == 0x1`).
+3. Contract address verification (must match official Base Sepolia USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`).
+4. Event log topic decoding: ERC-20 `Transfer(address,address,uint256)` topic `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef`.
+5. Recipient address verification: Transfer `to` parameter matches seller `payTo`.
+6. Integer value verification: Transfer `value` integer uint256 matches exact price in base units.
+
+### 3. How It Works
+- `decode_and_validate_transfer_logs()` decodes 32-byte padded addresses and big-endian amounts using `web3`.
+- `verify_full_settlement()` rejects the settlement if any of the 6 points fail.
+- `SellerPaymentVerifier` provides Member 2 with this verification pipeline.
+
+---
+
+## Decision 16: Durable Persistence Layer for Idempotency, Budget Locks, and Crash Recovery
+
+### 1. Context & Problem
+In-memory caches for idempotency, nonces, and budget reservations are wiped clean upon process restart, worker reload, or crash. This creates vulnerability to replay attacks, double spending, and lost in-flight reconciliations.
+
+### 2. Theory & Logic
+Payment attempts, nonces, and budget holds must be backed by durable database tables with transactional integrity.
+
+### 3. How It Works
+- Created `PaymentAttemptModel` and `BudgetReservationModel` in `backend/payments/models.py`.
+- `DurablePaymentRepository` persists attempts atomically and tracks reservation lifecycle (`reserved` -> `committed` / `released`).
+- `IdempotencyStore` falls back to querying the database when an idempotency key or nonce is not found in memory.
+- `PaymentService.get_pending_reconciliations()` hydrates suspense records from `payment_attempts` table on startup.

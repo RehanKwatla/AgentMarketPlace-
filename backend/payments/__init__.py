@@ -1,17 +1,57 @@
 """Payment subsystem module owned by Member 1."""
 from .policy import PaymentPolicyVerifier
 from .budget import BudgetManager
-from .idempotency import IdempotencyStore
-from .settlement import SettlementVerifier
+from .idempotency import IdempotencyStore, idempotency_store, compute_payload_hash
+from .settlement import SettlementVerifier, settlement_verifier, SellerPaymentVerifier, seller_payment_verifier
 from .interfaces import BuyerPaymentClientInterface, SellerPaymentVerifierInterface
+from .schemas import PaidCallRequest, PaidCallResult, PaymentStatus, PaymentAttemptRecord, BudgetReservationRecord
+from .x402_adapter import X402Adapter, x402_adapter
+from .service import PaymentService, payment_service
+from .models import PaymentAttemptModel, BudgetReservationModel, DurablePaymentRepository, durable_payment_repo
+from .errors import (
+    PaymentEngineError,
+    PaymentPolicyViolationError,
+    BudgetExceededError,
+    ReplayAttackDetectedError,
+    IdempotencyConflictError,
+    ServiceDisabledError,
+    SettlementVerificationError,
+    SettlementTimeoutError,
+)
 from .routes import router
 
 __all__ = [
     "PaymentPolicyVerifier",
     "BudgetManager",
     "IdempotencyStore",
+    "idempotency_store",
+    "compute_payload_hash",
     "SettlementVerifier",
+    "settlement_verifier",
+    "SellerPaymentVerifier",
+    "seller_payment_verifier",
     "BuyerPaymentClientInterface",
     "SellerPaymentVerifierInterface",
+    "PaidCallRequest",
+    "PaidCallResult",
+    "PaymentStatus",
+    "PaymentAttemptRecord",
+    "BudgetReservationRecord",
+    "PaymentAttemptModel",
+    "BudgetReservationModel",
+    "DurablePaymentRepository",
+    "durable_payment_repo",
+    "X402Adapter",
+    "x402_adapter",
+    "PaymentService",
+    "payment_service",
+    "PaymentEngineError",
+    "PaymentPolicyViolationError",
+    "BudgetExceededError",
+    "ReplayAttackDetectedError",
+    "IdempotencyConflictError",
+    "ServiceDisabledError",
+    "SettlementVerificationError",
+    "SettlementTimeoutError",
     "router",
 ]
