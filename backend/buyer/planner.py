@@ -1,10 +1,11 @@
-"""Deterministic-First Task Planner creating validated execution DAGs using the Service Registry."""
+import json
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from backend.shared.constants import ServiceCategory, usdc_to_base_units
 from backend.buyer.schemas import TaskCreationRequest
 from backend.buyer.plan_validator import ExecutionPlan, PlannedCall, PlanValidator, PlanValidationError
 from backend.buyer.selector import ServiceSelector
+from backend.registry.schemas import ServiceRecord
 
 
 class TaskPlanner:
@@ -17,6 +18,74 @@ class TaskPlanner:
     ):
         self.selector = selector or ServiceSelector()
         self.validator = validator or PlanValidator()
+
+    def _validate_call_input_against_capabilities(
+        self,
+        service: ServiceRecord,
+        payload: Dict[str, Any],
+    ) -> None:
+        """Validate task input against declared service capability constraints before paid execution."""
+        if not service or not service.capability_metadata:
+            return
+
+        # 1. Validate payload size constraint
+        payload_bytes = len(json.dumps(payload).encode("utf-8"))
+        if service.capability_metadata.max_payload_bytes is not None:
+            if payload_bytes > service.capability_metadata.max_payload_bytes:
+                raise PlanValidationError(
+                    f"Task input payload for '{service.service_id}' ({payload_bytes} bytes) exceeds "
+                    f"declared max_payload_bytes ({service.capability_metadata.max_payload_bytes} bytes)."
+                )
+
+        constraints = service.capability_metadata.constraints or {}
+
+        # 2. Scraping validations
+        if "url" in payload:
+            url = str(payload["url"]).strip()
+            max_len = constraints.get("max_url_length", 2048)
+            if len(url) > max_len:
+                raise PlanValidationError(
+                    f"Scraping input URL length ({len(url)}) exceeds service max_url_length ({max_len})."
+                )
+
+            allowed_schemes = constraints.get("allowed_schemes", ["http", "https"])
+            scheme = url.split("://")[0].lower() if "://" in url else ""
+            if scheme not in allowed_schemes:
+                raise PlanValidationError(
+                    f"Scraping input URL scheme '{scheme}' is not in allowed schemes: {allowed_schemes}."
+                )
+
+            blocked_hosts = constraints.get("blocked_hosts", ["localhost", "127.0.0.1", "0.0.0.0"])
+            for blocked in blocked_hosts:
+                if blocked in url.lower():
+                    raise PlanValidationError(
+                        f"Scraping input URL contains blocked host destination: '{blocked}'."
+                    )
+
+        # 3. Data validations
+        if "symbol" in payload:
+            symbol = str(payload["symbol"]).strip().upper()
+            supported_symbols = constraints.get("supported_symbols")
+            if supported_symbols and symbol not in [s.upper() for s in supported_symbols]:
+                raise PlanValidationError(
+                    f"Data input symbol '{symbol}' is not supported by '{service.service_id}'. "
+                    f"Supported: {supported_symbols}."
+                )
+
+        # 4. Inference validations
+        if "prompt" in payload:
+            prompt = str(payload["prompt"])
+            max_prompt_len = constraints.get("max_prompt_length", 4000)
+            if len(prompt) > max_prompt_len:
+                raise PlanValidationError(
+                    f"Inference input prompt length ({len(prompt)}) exceeds declared service limit ({max_prompt_len})."
+                )
+            max_tokens = payload.get("max_tokens")
+            max_tokens_limit = constraints.get("max_tokens_limit")
+            if max_tokens and max_tokens_limit and max_tokens > max_tokens_limit:
+                raise PlanValidationError(
+                    f"Inference requested max_tokens ({max_tokens}) exceeds declared service limit ({max_tokens_limit})."
+                )
 
     def create_plan(self, request: TaskCreationRequest) -> ExecutionPlan:
         """Generate a deterministic multi-step plan based on prompt intent and category constraints.
@@ -64,9 +133,12 @@ class TaskPlanner:
                     f"Unable to select an eligible service for Scraping (budget: {budget_units} units). {reason}"
                 )
 
-            url_match = re.search(r"https?://[^\s]+", request.task or "")
+            url_match = re.search(r"[a-zA-Z0-9+.-]+://[^\s]+", request.task or "")
             target_url = url_match.group(0) if url_match else "https://ethereum.org"
             scraping_step_id = step_id
+
+            scraping_payload = {"url": target_url}
+            self._validate_call_input_against_capabilities(primary_svc, scraping_payload)
 
             fb_ids = [f.service_id for f in fallbacks]
             max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
@@ -77,7 +149,7 @@ class TaskPlanner:
                 capability="scraping.extract.v1",
                 service_id=primary_svc.service_id,
                 fallback_service_ids=fb_ids,
-                input_payload={"url": target_url},
+                input_payload=scraping_payload,
                 estimated_price_units=primary_svc.price_atomic,
                 worst_case_price_units=max_svc_price,
                 depends_on=[],
@@ -104,7 +176,18 @@ class TaskPlanner:
             symbol = "ETH"
             if "btc" in prompt_lower or "bitcoin" in prompt_lower:
                 symbol = "BTC"
+            elif "sol" in prompt_lower or "solana" in prompt_lower:
+                symbol = "SOL"
+            elif "usdc" in prompt_lower:
+                symbol = "USDC"
+            else:
+                sym_match = re.search(r"\b(?:symbol|ticker|asset|data for|rate of|rate for|price of|price for|quote for|market of)\s+([a-zA-Z0-9_]{2,30})\b", prompt_lower)
+                if sym_match:
+                    symbol = sym_match.group(1).upper()
+
             data_step_id = step_id
+            data_payload = {"symbol": symbol}
+            self._validate_call_input_against_capabilities(primary_svc, data_payload)
 
             fb_ids = [f.service_id for f in fallbacks]
             max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
@@ -115,7 +198,7 @@ class TaskPlanner:
                 capability="data.lookup.v1",
                 service_id=primary_svc.service_id,
                 fallback_service_ids=fb_ids,
-                input_payload={"symbol": symbol},
+                input_payload=data_payload,
                 estimated_price_units=primary_svc.price_atomic,
                 worst_case_price_units=max_svc_price,
                 depends_on=[],
@@ -144,6 +227,9 @@ class TaskPlanner:
             if data_step_id:
                 deps.append(data_step_id)
 
+            inference_payload = {"prompt": request.task, "max_tokens": 200}
+            self._validate_call_input_against_capabilities(primary_svc, inference_payload)
+
             fb_ids = [f.service_id for f in fallbacks]
             max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
 
@@ -153,7 +239,7 @@ class TaskPlanner:
                 capability="inference.summarize.v1",
                 service_id=primary_svc.service_id,
                 fallback_service_ids=fb_ids,
-                input_payload={"prompt": request.task, "max_tokens": 200},
+                input_payload=inference_payload,
                 estimated_price_units=primary_svc.price_atomic,
                 worst_case_price_units=max_svc_price,
                 depends_on=deps,

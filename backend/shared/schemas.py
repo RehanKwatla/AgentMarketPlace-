@@ -53,6 +53,18 @@ class SettlementReceipt(BaseModel):
 # Service Registry Schemas
 # ==============================================================================
 
+class CapabilityMetadata(BaseModel):
+    """Detailed capability profile, SLA guarantees, and execution constraints."""
+    version: str = Field(default="1.0.0", description="Capability schema semantic version")
+    tags: List[str] = Field(default_factory=list, description="Searchable domain tags")
+    supported_formats: List[str] = Field(default_factory=list, description="Supported MIME or content formats")
+    max_payload_bytes: Optional[int] = Field(default=None, description="Max input payload size in bytes")
+    rate_limit_per_minute: Optional[int] = Field(default=None, description="Max allowed requests per minute")
+    sla_latency_p95_ms: Optional[int] = Field(default=None, description="Service level agreement p95 latency target")
+    deterministic: bool = Field(default=True, description="Whether output is idempotent and deterministic")
+    constraints: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary service-specific execution constraints")
+
+
 class ServiceDefinition(BaseModel):
     service_id: str = Field(..., description="Unique service slug, e.g. data_001")
     name: str = Field(..., description="Human-readable service title")
@@ -66,6 +78,10 @@ class ServiceDefinition(BaseModel):
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     is_active: bool = Field(default=True)
+    capability_metadata: Optional[CapabilityMetadata] = Field(
+        default=None,
+        description="Detailed capability profile and execution constraints",
+    )
 
     @model_validator(mode="after")
     def populate_base_units(self) -> "ServiceDefinition":
