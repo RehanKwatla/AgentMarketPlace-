@@ -193,6 +193,34 @@
   5. `test_end_to_end_demonstration_accepted_outputs_rejected_output_and_provenance` [PASSED]
 - Ran full test suite via `python scripts/run_tests.py`: **83 of 83 tests passed (100% pass rate in 1.57s)**.
 
+### Step 14: Purchase Explanation, Spending Summary, & Authoritative Ledger Reconciliation
+- Enhanced `backend/buyer/schemas.py`:
+  - Added `SpendingSummary` model with 7 itemized fields: `budget_allocated_usdc`, `estimated_cost_usdc`, `verified_spent_usdc`, `reserved_budget_usdc`, `uncertain_pending_usdc`, `refunded_amount_usdc`, and `remaining_budget_usdc`.
+  - Added `CallExecutionSummary` capturing granular status, listed price, verified paid price, settlement verification boolean, explorer URL, validation status, output accepted boolean, and fallback flags.
+  - Enhanced `ServiceSelectionReason` with actual selection evidence: `reputation_score`, `median_latency_ms`, and `relevance`.
+  - Enhanced `PurchaseExplanation` with `call_executions`, `spending_summary`, and `explorer_links`.
+- Refactored `backend/buyer/explanation.py`:
+  - Injected `LedgerRepository` (Member 4's `ledger_repo`) as single source of truth for verified spending.
+  - Verified spending is computed solely from confirmed ledger entries (`status == paid` or `status == paid output rejected` with verified `tx_hash`).
+  - Missing ledger entries emit descriptive warnings and are excluded from certified spending.
+  - Ambiguous / pending reconciliation calls are held in `uncertain_pending_usdc` and excluded from verified spending.
+  - Implemented strict Base Sepolia explorer link construction (`https://sepolia.basescan.org/tx/{tx_hash}`) requiring 66-character hex hash, strictly rejecting fake/mock tokens.
+  - Service selection narratives incorporate actual registered reputation scores and latencies, explicitly reporting "No prior reputation history in ledger" when call count is 0.
+- Synchronized `backend/buyer/service.py`:
+  - Task and result responses derive `spent_usdc` and `remaining_usdc` directly from the ledger-backed `PurchaseExplanation`.
+  - Added legacy endpoint `@router.get("/api/v1/buyer/tasks/{task_id}")` in `backend/buyer/routes.py`.
+- Created comprehensive test suite `backend/tests/test_purchase_explanation.py` (8 tests):
+  1. `test_correct_ledger_totals` [PASSED]
+  2. `test_missing_ledger_data` [PASSED]
+  3. `test_pending_reconciliation_not_counted_as_verified_spend` [PASSED]
+  4. `test_rejected_output_after_verified_payment_retains_cost_and_explanation` [PASSED]
+  5. `test_remaining_budget_calculation_zero_float_drift` [PASSED]
+  6. `test_basescan_explorer_link_no_fabrication` [PASSED]
+  7. `test_service_selection_explanation_actual_evidence` [PASSED]
+  8. `test_dashboard_endpoint_agrees_with_authoritative_ledger` [PASSED]
+- Ran full test suite via `python scripts/run_tests.py`: **91 of 91 tests passed (100% pass rate in 1.67s)**.
+
+
 
 
 

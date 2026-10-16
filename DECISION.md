@@ -254,5 +254,29 @@ In a decentralized pay-per-call agent economy, sellers may return responses with
 - **Deterministic Field-Level & Result-Level Provenance:** Every aggregated finding in `market_data` and `summary` is explicitly linked in a `provenance` record specifying: `target_field`, `service_id`, `call_id`, `step_id`, `category`, `schema_version`, `timestamp`, `payment_reference`, and `validation_status: "valid"`.
 - **Transparent Execution Disclosures:** When outputs are rejected or calls fail, transparent disclosure notices are appended to the user-facing summary detailing the producing service ID and schema error reason.
 
+---
+
+## Decision 14: Authoritative Ledger Reconciliation, Itemized Spending Summaries, & Non-Fabricated Explorer Links
+
+### 1. Context & Problem
+In agent marketplaces, users and auditors require transparent explanations of every micropayment. If the buyer agent derives verified spending from local in-memory counters or planned prices, discrepancies emerge between the buyer's reported total and Member 4's authoritative audit ledger. Furthermore, generating fake or illustrative explorer links for non-hash tokens or unsettled calls misleads users and undermines trust.
+
+### 2. Theory & Logic
+- **Authoritative Ledger Reconciliation:** `ExplanationGenerator` queries Member 4's `ledger_repo` for every service call record. Verified spending is calculated exclusively from ledger records with verified settlement proofs (`tx_hash` / facilitator receipt) in terminal states (`paid` or `paid output rejected`).
+- **Missing & Ambiguous Ledger Isolation:**
+  - If a ledger entry is missing, it is NOT counted in verified spending; a warning is recorded.
+  - If a call is in `pending reconciliation` or lacks on-chain confirmation, its amount is quarantined under `uncertain_pending_usdc` and subtracted from available remaining budget, but never presented as verified spend.
+- **Seven-Part Itemized Spending Accounting:** Pure integer base-unit arithmetic guarantees exact precision across:
+  1. `budget_allocated_usdc`: Initial budget allocation.
+  2. `estimated_cost_usdc`: Pre-execution planned cost ceiling.
+  3. `verified_spent_usdc`: Sum of verified on-chain settled payments from ledger.
+  4. `reserved_budget_usdc`: Funds held for pending reconciliations.
+  5. `uncertain_pending_usdc`: Ambiguous amounts awaiting on-chain resolution.
+  6. `refunded_amount_usdc`: Released unspent funds returned to buyer.
+  7. `remaining_budget_usdc`: Available unspent funds (`budget - verified_spent - uncertain_pending`).
+- **Strict Explorer Link Validation (Zero Fabrication):** Base Sepolia explorer links (`https://sepolia.basescan.org/tx/{tx_hash}`) are generated strictly when a verified 66-character hex hash starting with `0x` is present. Placeholder tokens, mock strings, or receipts return `None`.
+- **Fact-Based Service Selection Explanations:** Explanations cite actual registry reputation scores and median latencies when verified call history exists; when a service has no history, the narrative explicitly states `"No prior reputation history in ledger"` without hallucinating scores.
+
+
 
 

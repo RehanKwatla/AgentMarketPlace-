@@ -92,6 +92,16 @@ async def get_task_status(task_id: str):
 
 
 @router.get(
+    "/api/v1/buyer/tasks/{task_id}",
+    response_model=TaskDetailResponse,
+    summary="Legacy Task Detail Endpoint",
+    description="Maintains backward compatibility for /api/v1/buyer/tasks/{task_id} callers."
+)
+async def legacy_get_task_status(task_id: str):
+    return await get_task_status(task_id)
+
+
+@router.get(
     "/api/v1/tasks/{task_id}/result",
     response_model=TaskResultResponse,
     summary="Get Final Result and Provenance",

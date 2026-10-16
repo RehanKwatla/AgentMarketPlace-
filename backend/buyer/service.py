@@ -258,20 +258,19 @@ class BuyerService:
             calls=all_calls
         )
 
-        total_spent_units = sum(
-            usdc_to_base_units(c.amount_paid_usdc)
-            for c in all_calls
-            if c.status in [CallStatus.SUCCEEDED, CallStatus.PAID_OUTPUT_REJECTED]
-        )
-        remaining_units = max(0, budget_units - total_spent_units)
-
         explanation = self.explanation_gen.generate_explanation(
             task_prompt=request.task,
             budget_usdc=request.budget_usdc,
             calls=all_calls,
             fallbacks=fallbacks,
-            warnings=warnings
+            warnings=warnings,
+            planned_calls=plan.calls
         )
+
+        total_spent_usdc = explanation.verified_total_spend_usdc
+        total_spent_units = usdc_to_base_units(total_spent_usdc)
+        remaining_usdc = explanation.remaining_budget_usdc
+        remaining_units = usdc_to_base_units(remaining_usdc)
 
         # Check overall final status
         has_pending_recon = any(c.status == CallStatus.PENDING_RECONCILIATION for c in all_calls)
@@ -292,10 +291,10 @@ class BuyerService:
 
         task_record.status = task_status
         task_record.calls = all_calls
-        task_record.spent_usdc = base_units_to_usdc(total_spent_units)
+        task_record.spent_usdc = total_spent_usdc
         task_record.spent_atomic = total_spent_units
         task_record.actual_spent_atomic = total_spent_units
-        task_record.remaining_usdc = base_units_to_usdc(remaining_units)
+        task_record.remaining_usdc = remaining_usdc
         task_record.remaining_atomic = remaining_units
         task_record.result = final_result
         task_record.final_result = final_result.get("summary", "")

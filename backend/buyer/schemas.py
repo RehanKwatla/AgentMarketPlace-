@@ -116,23 +116,56 @@ class ServiceCallRecord(BaseModel):
     completed_at: Optional[str] = None
 
 
+class SpendingSummary(BaseModel):
+    budget_allocated_usdc: str = "0.000000"
+    estimated_cost_usdc: str = "0.000000"
+    verified_spent_usdc: str = "0.000000"
+    reserved_budget_usdc: str = "0.000000"
+    uncertain_pending_usdc: str = "0.000000"
+    refunded_amount_usdc: str = "0.000000"
+    remaining_budget_usdc: str = "0.000000"
+
+
+class CallExecutionSummary(BaseModel):
+    call_id: str
+    step_id: Optional[int] = None
+    service_id: str
+    category: str
+    status: str
+    listed_price_usdc: str
+    verified_paid_usdc: str = "0.000000"
+    is_settlement_verified: bool = False
+    transaction_hash: Optional[str] = None
+    explorer_url: Optional[str] = None
+    validation_status: str = "unvalidated"
+    output_accepted: bool = False
+    rejection_or_failure_reason: Optional[str] = None
+    is_fallback: bool = False
+
+
 class ServiceSelectionReason(BaseModel):
     service_id: str
     category: str
     reason: str
     listed_price_usdc: str
-    amount_paid_usdc: str
+    amount_paid_usdc: str = "0.000000"
+    reputation_score: Optional[float] = None
+    median_latency_ms: Optional[float] = None
+    relevance: Optional[float] = None
 
 
 class PurchaseExplanation(BaseModel):
     task_interpretation: str
     selected_services: List[ServiceSelectionReason] = Field(default_factory=list)
+    call_executions: List[CallExecutionSummary] = Field(default_factory=list)
     outputs_accepted: List[str] = Field(default_factory=list)
     outputs_rejected: List[str] = Field(default_factory=list)
     fallback_attempts: List[str] = Field(default_factory=list)
+    spending_summary: SpendingSummary = Field(default_factory=SpendingSummary)
     verified_total_spend_usdc: str = "0.000000"
     remaining_budget_usdc: str = "0.000000"
     transaction_references: List[str] = Field(default_factory=list)
+    explorer_links: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
 

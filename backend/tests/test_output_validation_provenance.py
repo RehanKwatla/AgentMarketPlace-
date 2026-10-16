@@ -396,7 +396,7 @@ async def test_end_to_end_demonstration_accepted_outputs_rejected_output_and_pro
             # Succeeded
             await budget_mgr.reserve(f"res_{planned.step_id}", 3000)
             await budget_mgr.commit(f"res_{planned.step_id}", 3000)
-            return ServiceCallRecord(
+            rec = ServiceCallRecord(
                 call_id=f"call_{planned.step_id}_scraping",
                 service_id="scraping_001",
                 category=ServiceCategory.SCRAPING,
@@ -410,11 +410,21 @@ async def test_end_to_end_demonstration_accepted_outputs_rejected_output_and_pro
                 output={"url": "https://ethereum.org", "title": "Ethereum Home", "content": "Ethereum is programmable money", "word_count": 4},
                 validation_status="accepted"
             )
+            service.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=f"call_{planned.step_id}_scraping",
+                service_id="scraping_001",
+                listed_price="0.003000",
+                amount_paid="0.003000",
+                status="paid",
+                tx_hash="0xreceipt_demo_scraping"
+            )
+            return rec
         elif planned.category == ServiceCategory.DATA.value:
             # Paid but output rejected due to missing 'volume_24h'
             await budget_mgr.reserve(f"res_{planned.step_id}", 2000)
             await budget_mgr.commit(f"res_{planned.step_id}", 2000)
-            return ServiceCallRecord(
+            rec = ServiceCallRecord(
                 call_id=f"call_{planned.step_id}_data",
                 service_id="data_001",
                 category=ServiceCategory.DATA,
@@ -429,11 +439,21 @@ async def test_end_to_end_demonstration_accepted_outputs_rejected_output_and_pro
                 error="Schema validation failed: Missing required field(s): 'volume_24h' is a required property",
                 validation_status="rejected"
             )
+            service.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=f"call_{planned.step_id}_data",
+                service_id="data_001",
+                listed_price="0.002000",
+                amount_paid="0.002000",
+                status="paid output rejected",
+                tx_hash="0xreceipt_demo_data"
+            )
+            return rec
         else:
             # Inference succeeds
             await budget_mgr.reserve(f"res_{planned.step_id}", 4000)
             await budget_mgr.commit(f"res_{planned.step_id}", 4000)
-            return ServiceCallRecord(
+            rec = ServiceCallRecord(
                 call_id=f"call_{planned.step_id}_inference",
                 service_id="inference_001",
                 category=ServiceCategory.INFERENCE,
@@ -447,6 +467,16 @@ async def test_end_to_end_demonstration_accepted_outputs_rejected_output_and_pro
                 output={"response": "Executive Summary: Validated findings from Ethereum scraping indicate stable network activity.", "model_used": "reasoner-v1", "tokens_generated": 14},
                 validation_status="accepted"
             )
+            service.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=f"call_{planned.step_id}_inference",
+                service_id="inference_001",
+                listed_price="0.004000",
+                amount_paid="0.004000",
+                status="paid",
+                tx_hash="0xreceipt_demo_inference"
+            )
+            return rec
 
     with patch.object(service, "_execute_call", side_effect=mock_execute):
         task_response = await service.execute_task(task_record.task_id)
