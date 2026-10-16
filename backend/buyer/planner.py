@@ -1,48 +1,48 @@
-"""Deterministic-first Planner creating validated dependency DAGs for tasks."""
+"""Deterministic-First Task Planner creating validated execution DAGs."""
 import re
 from typing import List, Optional
 from backend.shared.constants import ServiceCategory, usdc_to_base_units
 from backend.buyer.schemas import TaskCreationRequest
+from backend.buyer.plan_validator import ExecutionPlan, PlannedCall, PlanValidator
 from backend.buyer.selector import ServiceSelector
-from backend.buyer.plan_validator import PlannedCall, ExecutionPlan, PlanValidator
 
 
 class TaskPlanner:
-    """Decomposes natural language goals into deterministic execution plans."""
+    """Decomposes natural language task requests into structured, validated execution DAGs."""
 
     def __init__(
         self,
-        selector: ServiceSelector = None,
-        validator: PlanValidator = None
+        selector: Optional[ServiceSelector] = None,
+        validator: Optional[PlanValidator] = None
     ):
         self.selector = selector or ServiceSelector()
         self.validator = validator or PlanValidator()
 
     def create_plan(self, request: TaskCreationRequest) -> ExecutionPlan:
-        """Construct a validated multi-service execution plan."""
+        """Generate a deterministic multi-step plan based on prompt intent and category constraints."""
         budget_units = usdc_to_base_units(request.budget_usdc)
-        prompt_lower = request.task.lower()
+        prompt_lower = (request.task or "").lower()
+
+        need_scraping = False
+        need_data = False
+        need_inference = True
+
+        # Check explicit preferred categories
+        if request.preferred_categories:
+            need_scraping = ServiceCategory.SCRAPING in request.preferred_categories
+            need_data = ServiceCategory.DATA in request.preferred_categories
+            need_inference = ServiceCategory.INFERENCE in request.preferred_categories
+        else:
+            # Heuristic intent mapping
+            if any(w in prompt_lower for w in ["scrape", "web", "fetch", "url", "extract", "article", "http"]):
+                need_scraping = True
+            if any(w in prompt_lower for w in ["crypto", "price", "market", "data", "eth", "btc", "financial"]):
+                need_data = True
+            if any(w in prompt_lower for w in ["summarize", "analyze", "ai", "reasoning", "infer", "report"]) or not (need_scraping or need_data):
+                need_inference = True
+
         calls: List[PlannedCall] = []
         step_id = 1
-
-        need_data = bool(
-            request.require_all_categories
-            or (request.preferred_categories and ServiceCategory.DATA in request.preferred_categories)
-            or any(k in prompt_lower for k in ["market", "price", "eth", "btc", "financial", "crypto", "data", "symbol"])
-        )
-
-        need_scraping = bool(
-            request.require_all_categories
-            or (request.preferred_categories and ServiceCategory.SCRAPING in request.preferred_categories)
-            or any(k in prompt_lower for k in ["scrape", "web", "article", "page", "url", "extract", "content", "news"])
-        )
-
-        need_inference = bool(
-            request.require_all_categories
-            or (request.preferred_categories and ServiceCategory.INFERENCE in request.preferred_categories)
-            or any(k in prompt_lower for k in ["summarize", "analyze", "infer", "findings", "takeaways", "overview"])
-            or not (need_data or need_scraping)  # Fallback to inference if generic
-        )
 
         # 1. Scraping Step
         scraping_step_id: Optional[int] = None
@@ -52,8 +52,7 @@ class TaskPlanner:
                 max_budget_units=budget_units
             )
             if service:
-                # Extract URL if present, otherwise default to relevant public page
-                url_match = re.search(r"https?://[^\s]+", request.task)
+                url_match = re.search(r"https?://[^\s]+", request.task or "")
                 target_url = url_match.group(0) if url_match else "https://ethereum.org"
                 scraping_step_id = step_id
                 calls.append(PlannedCall(
@@ -66,7 +65,7 @@ class TaskPlanner:
                 ))
                 step_id += 1
 
-        # 2. Data Step (Can run concurrently with Scraping)
+        # 2. Data Step (Can execute concurrently with Scraping)
         data_step_id: Optional[int] = None
         if need_data:
             service = self.selector.select_service_for_category(
@@ -74,7 +73,6 @@ class TaskPlanner:
                 max_budget_units=budget_units
             )
             if service:
-                # Extract symbol if mentioned
                 symbol = "ETH"
                 if "btc" in prompt_lower or "bitcoin" in prompt_lower:
                     symbol = "BTC"
@@ -89,7 +87,7 @@ class TaskPlanner:
                 ))
                 step_id += 1
 
-        # 3. Inference / Summarization Step (Depends on upstream data & scraping)
+        # 3. Inference Step (Depends on upstream context from Scraping and/or Data)
         if need_inference:
             service = self.selector.select_service_for_category(
                 category=ServiceCategory.INFERENCE,
@@ -122,6 +120,6 @@ class TaskPlanner:
             max_concurrency=request.max_concurrency
         )
 
-        # Validate plan deterministically
+        # Validate deterministically before returning
         self.validator.validate_plan(plan, concurrency_limit=request.max_concurrency)
         return plan

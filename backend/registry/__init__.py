@@ -1,16 +1,19 @@
-"""Registry subsystem module owned by Member 3."""
-from .router import router
-from .service import RegistryService, registry_service
-from .schemas import ServiceRecord, ServiceListResponse, ServiceReputationSummary
-from .validation import validate_service_registration, validate_json_schema
+"""Service Registry Package Exports."""
+from backend.registry.schemas import (
+    ServiceRecord,
+    ServiceListResponse,
+    ServiceReputationSummary,
+    ServiceRegistrationRequest,
+)
+from backend.registry.service import RegistryService, registry_service
+from backend.registry.routes import router
 
 __all__ = [
-    "router",
-    "RegistryService",
-    "registry_service",
     "ServiceRecord",
     "ServiceListResponse",
     "ServiceReputationSummary",
-    "validate_service_registration",
-    "validate_json_schema",
+    "ServiceRegistrationRequest",
+    "RegistryService",
+    "registry_service",
+    "router",
 ]

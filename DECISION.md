@@ -154,32 +154,18 @@ Frontend single-page applications (SPAs) bundle JavaScript that is readable by a
 
 ---
 
-## Decision 9: Deterministic-First Planning & Untrusted LLM Boundary
+## Decision 9: Separation of Task Creation from Payment Execution & Model Alignment
 
 ### 1. Context & Problem
-Allowing an LLM to freely decide payment recipients, tokens, networks, or prices creates critical attack surfaces (e.g., prompt injection leading to funds draining or spoofed addresses).
+Premature payment execution upon task submission violates the principle of least privilege and atomic budgeting. If task parsing fails or budget constraints are violated during decomposition, any upfront payment is lost or requires complex refund reconciliation. Furthermore, multiple team members creating independent database tables leads to schema collisions.
 
 ### 2. Theory & Logic
-- **Never Trust Model-Generated Pricing or Addresses:** Every service ID in an execution plan must be strictly resolved through the server-side registry.
-- Recipient addresses, token addresses, CAIP-2 network identifiers, and prices are fetched directly from authoritative server memory / database.
-- A deterministic rule-based planner parses prompt intent and decomposes it into a Directed Acyclic Graph (DAG) with known dependencies (Scraping and Data parallel; Inference dependent on upstream outputs).
-- Budget reservations must cover worst-case plan cost before any HTTP calls or payments commence.
+- **Decoupled Planning vs. Execution:** Creating a task (`POST /api/v1/tasks`) with `execute_now: false` admits the request, verifies input syntax, converts budget to integer USDC atomic units without floats, and sets status to `accepted`.
+- **Member 4 Model Alignment:** Uses Member 4's single source of truth `TaskRecordModel` via SQLAlchemy ORM rather than introducing conflicting buyer tables.
+- **Verification Gates:** A task cannot reach `completed` until the service outputs pass strict Draft-7 JSON schema validation against the registered seller schema. If output fails, the task state transitions to `refused` or `failed` with zero funds committed for non-conforming responses.
 
 ### 3. How It Works
-- Implemented in `backend/buyer/planner.py`, `backend/buyer/plan_validator.py`, and `backend/buyer/selector.py`.
-- Verified in `backend/tests/test_member3.py` and `backend/tests/test_buyer.py`.
-
----
-
-## Decision 10: In-Process ASGI Transport for Zero-Socket Automated Testing
-
-### 1. Context & Problem
-When running automated tests via pytest, `httpx.AsyncClient` attempting to make live network HTTP requests to `http://localhost:8000` will fail with `ConnectError` because no live OS TCP socket is open during unit testing.
-
-### 2. Theory & Logic
-- **In-Memory ASGI Dispatch:** Using `httpx.ASGITransport(app=app)` allows `httpx.AsyncClient` to directly execute requests against the FastAPI app in-memory without binding a physical port or needing a separate background server process.
-
-### 3. How It Works
-- `BuyerService._execute_call` inspects `endpoint_url`. If targeting `localhost` or `127.0.0.1`, it attaches `ASGITransport(app=app)`.
-- If deployed to live Docker or external staging, it falls back to standard HTTP networking automatically.
+- `TaskRepository` persists task state to `TaskRecordModel`.
+- `BuyerService` coordinates atomic budget reservation with Member 1's `BudgetManager`.
+- Provenance and purchase explanation records capture all seller receipts and tx hashes transparently.
 

@@ -11,7 +11,7 @@ from backend.shared.constants import (
 
 
 class TaskStatus(str, Enum):
-    QUEUED = "queued"
+    ACCEPTED = "accepted"
     PLANNING = "planning"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -19,6 +19,11 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
     REFUSED = "refused"
     CANCELLED = "cancelled"
+    PENDING_RECONCILIATION = "pending_reconciliation"
+    # Legacy aliases
+    CREATED = "accepted"
+    QUEUED = "accepted"
+    EXECUTING = "running"
 
 
 class CallStatus(str, Enum):
@@ -36,45 +41,48 @@ class CallStatus(str, Enum):
 class TaskCreationRequest(BaseModel):
     task: Optional[str] = Field(default=None, description="Natural language task prompt")
     description: Optional[str] = Field(default=None, description="Alias for task prompt")
-    budget_usdc: Optional[str] = Field(default=None, description="Explicit spending budget in decimal USDC (e.g. '0.050000')")
-    max_budget_atomic: Optional[int] = Field(default=None, description="Spending budget in atomic units (6 decimals)")
+    budget_usdc: Optional[str] = Field(default=None, description="Spending budget in decimal USDC (e.g. '0.050000')")
+    max_budget_atomic: Optional[int] = Field(default=None, description="Spending budget in atomic base units (6 decimals)")
     max_concurrency: int = Field(default=3, ge=1, le=10, description="Max parallel service calls (>=3 supported)")
     preferred_categories: Optional[List[ServiceCategory]] = Field(default=None)
     required_categories: Optional[List[str]] = Field(default=None)
-    require_all_categories: bool = Field(default=False)
+    execute_now: bool = Field(default=True, description="Whether to execute the task immediately after creation and persistence")
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_fields(cls, data: Any) -> Any:
+    def normalize_and_validate_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            # Resolve task / description
+            # 1. Resolve task / description
             if not data.get("task") and data.get("description"):
                 data["task"] = data["description"]
             elif not data.get("description") and data.get("task"):
                 data["description"] = data["task"]
 
-            # Validate prompt presence
             prompt = data.get("task")
-            if not prompt or len(str(prompt).strip()) < 3:
-                raise ValueError("Task description must be at least 3 characters.")
+            if not prompt or not isinstance(prompt, str) or len(prompt.strip()) < 3:
+                raise ValueError("Natural-language task prompt must be a non-empty string with at least 3 characters.")
 
-            # Resolve budget
+            # 2. Resolve & convert budget to integer atomic units (without float arithmetic)
             atomic = data.get("max_budget_atomic")
             usdc = data.get("budget_usdc")
+
             if atomic is not None:
-                if atomic <= 0:
-                    raise ValueError("max_budget_atomic must be strictly positive (> 0).")
+                if not isinstance(atomic, int) or atomic <= 0:
+                    raise ValueError("max_budget_atomic must be a strictly positive integer (> 0).")
                 if not usdc:
                     data["budget_usdc"] = base_units_to_usdc(atomic)
             elif usdc is not None:
-                units = usdc_to_base_units(str(usdc))
+                try:
+                    units = usdc_to_base_units(str(usdc))
+                except Exception as e:
+                    raise ValueError(f"Invalid decimal USDC budget formatting '{usdc}': {e}")
                 if units <= 0:
                     raise ValueError("budget_usdc must be strictly positive (> 0).")
                 data["max_budget_atomic"] = units
             else:
-                raise ValueError("Must provide either budget_usdc or max_budget_atomic.")
+                raise ValueError("Must provide an explicit spending budget via 'budget_usdc' or 'max_budget_atomic'.")
 
-            # Resolve categories
+            # 3. Resolve categories
             if data.get("required_categories") and not data.get("preferred_categories"):
                 cats = []
                 for c in data["required_categories"]:
@@ -84,7 +92,6 @@ class TaskCreationRequest(BaseModel):
                 data["preferred_categories"] = cats
 
         return data
-
 
 
 class ServiceCallRecord(BaseModel):
@@ -124,8 +131,9 @@ class PurchaseExplanation(BaseModel):
 
 class TaskCreationResponse(BaseModel):
     task_id: str
-    status: TaskStatus
+    status: str
     budget_usdc: str
+    budget_atomic: int
     reserved_usdc: str = "0.000000"
     spent_usdc: str = "0.000000"
     max_concurrency: int = 3
@@ -135,20 +143,38 @@ class TaskCreationResponse(BaseModel):
 
 class TaskDetailResponse(BaseModel):
     task_id: str
-    status: TaskStatus
+    status: str
     task: str
     budget_usdc: str
-    reserved_usdc: str
-    spent_usdc: str
-    remaining_usdc: str
-    max_concurrency: int
+    budget_atomic: int = 0
+    reserved_usdc: str = "0.000000"
+    spent_usdc: str = "0.000000"
+    spent_atomic: int = 0
+    actual_spent_atomic: int = 0
+    remaining_usdc: str = "0.000000"
+    remaining_atomic: int = 0
+    max_concurrency: int = 3
+    plan_summary: Optional[Dict[str, Any]] = None
     calls: List[ServiceCallRecord] = Field(default_factory=list)
     result: Optional[Dict[str, Any]] = None
+    final_result: Optional[str] = None
     explanation: Optional[PurchaseExplanation] = None
-    actual_spent_atomic: int = 0
+    cost_explanation: Optional[str] = None
     failure_reason: Optional[str] = None
     created_at: str
     completed_at: Optional[str] = None
+
+
+class TaskResultResponse(BaseModel):
+    task_id: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
+    final_result: Optional[str] = None
+    provenance: List[Dict[str, Any]] = Field(default_factory=list)
+    cost_explanation: Optional[str] = None
+    explanation: Optional[Dict[str, Any]] = None
+    spent_usdc: str = "0.000000"
+    remaining_usdc: str = "0.000000"
 
 
 class TaskCallsResponse(BaseModel):
@@ -163,4 +189,3 @@ class TaskCallsResponse(BaseModel):
         data = super().model_dump(*args, **kwargs)
         data["calls"] = data.get("items", [])
         return data
-

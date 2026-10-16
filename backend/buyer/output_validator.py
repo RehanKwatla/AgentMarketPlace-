@@ -16,7 +16,6 @@ class OutputValidator:
             (is_valid: bool, error_message: str)
         """
         if not output_schema:
-            # If no schema defined, consider accepted
             return True, ""
 
         if not isinstance(output_payload, dict):
@@ -37,4 +36,3 @@ class OutputValidator:
         """Convenience method returning bool for quick validation checks."""
         valid, _ = cls().validate_output(output_payload, output_schema)
         return valid
-

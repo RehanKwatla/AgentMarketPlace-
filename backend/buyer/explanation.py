@@ -1,72 +1,72 @@
-"""Purchase Explanation generator producing transparent audit narratives."""
-from typing import List
+"""Purchase Explanation Generator providing transparent spending narratives."""
+from typing import List, Optional
 from backend.shared.constants import base_units_to_usdc, usdc_to_base_units
 from backend.buyer.schemas import (
     CallStatus,
-    ServiceCallRecord,
     PurchaseExplanation,
+    ServiceCallRecord,
     ServiceSelectionReason,
 )
 
 
 class ExplanationGenerator:
-    """Generates detailed, verified purchase explanations following DI-06 standards."""
+    """Produces structured narratives explaining service selection, validation, and spending."""
 
     def generate_explanation(
         self,
         task_prompt: str,
         budget_usdc: str,
         calls: List[ServiceCallRecord],
-        fallbacks: List[str],
-        warnings: List[str],
+        fallbacks: Optional[List[str]] = None,
+        warnings: Optional[List[str]] = None,
     ) -> PurchaseExplanation:
-        budget_units = usdc_to_base_units(budget_usdc)
-        total_spent_units = sum(
-            usdc_to_base_units(c.amount_paid_usdc)
-            for c in calls
-            if c.status in [CallStatus.SUCCEEDED, CallStatus.PAID_OUTPUT_REJECTED]
-        )
-        remaining_units = max(0, budget_units - total_spent_units)
+        """Construct full PurchaseExplanation."""
+        fallbacks = fallbacks or []
+        warnings = warnings or []
 
-        selected_services = []
-        outputs_accepted = []
-        outputs_rejected = []
-        tx_references = []
+        reasons: List[ServiceSelectionReason] = []
+        accepted: List[str] = []
+        rejected: List[str] = []
+        tx_refs: List[str] = []
+        total_spent_units = 0
 
         for c in calls:
-            reason_text = f"Selected for {c.category.value} capabilities"
-            selected_services.append(ServiceSelectionReason(
+            spent_units = usdc_to_base_units(c.amount_paid_usdc)
+            total_spent_units += spent_units
+
+            reasons.append(ServiceSelectionReason(
                 service_id=c.service_id,
-                category=c.category.value,
-                reason=reason_text,
+                category=c.category.value if hasattr(c.category, "value") else str(c.category),
+                reason=f"Selected for {c.category.value if hasattr(c.category, 'value') else str(c.category)} capabilities matching task intent.",
                 listed_price_usdc=c.listed_price_usdc,
-                amount_paid_usdc=c.amount_paid_usdc,
+                amount_paid_usdc=c.amount_paid_usdc
             ))
 
             if c.status == CallStatus.SUCCEEDED:
-                outputs_accepted.append(f"{c.service_id} (Call ID: {c.call_id[:8]}) accepted.")
+                accepted.append(f"{c.service_id} (Call ID: {c.call_id[:8]}) accepted.")
             elif c.status == CallStatus.PAID_OUTPUT_REJECTED:
-                outputs_rejected.append(
-                    f"{c.service_id} (Call ID: {c.call_id[:8]}) paid but rejected: {c.error or 'Invalid schema'}"
-                )
+                rejected.append(f"{c.service_id} (Call ID: {c.call_id[:8]}) settled payment but output rejected: {c.error}")
 
             if c.transaction_hash:
-                tx_references.append(f"Base Sepolia: {c.transaction_hash}")
+                tx_refs.append(c.transaction_hash)
 
-        # Meaningful interpretation
+        budget_units = usdc_to_base_units(budget_usdc)
+        remaining_units = max(0, budget_units - total_spent_units)
+
         interpretation = (
             f"Buyer interpreted task as multi-stage workflow requiring "
-            f"{', '.join(sorted({c.category.value for c in calls}))} execution within {budget_usdc} USDC."
+            f"{', '.join(sorted(set(r.category for r in reasons)) or ['service'])} execution "
+            f"within {budget_usdc} USDC."
         )
 
         return PurchaseExplanation(
             task_interpretation=interpretation,
-            selected_services=selected_services,
-            outputs_accepted=outputs_accepted,
-            outputs_rejected=outputs_rejected,
+            selected_services=reasons,
+            outputs_accepted=accepted,
+            outputs_rejected=rejected,
             fallback_attempts=fallbacks,
             verified_total_spend_usdc=base_units_to_usdc(total_spent_units),
             remaining_budget_usdc=base_units_to_usdc(remaining_units),
-            transaction_references=tx_references,
+            transaction_references=tx_refs,
             warnings=warnings
         )

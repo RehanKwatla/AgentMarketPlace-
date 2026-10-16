@@ -12,7 +12,7 @@ from backend.shared.constants import (
 
 class ServiceReputationSummary(BaseModel):
     service_id: Optional[str] = None
-    reputation_score: float = Field(default=0.98, ge=0.0, le=1.0)
+    reputation_score: float = Field(default=98.0, ge=0.0, le=100.0)
     success_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     median_latency_ms: float = Field(default=0.0, ge=0.0)
     latency_p95_ms: float = Field(default=120.0, ge=0.0)
@@ -24,9 +24,10 @@ class ServiceReputationSummary(BaseModel):
 
 
 class ServiceRecord(BaseModel):
-    service_id: str = Field(..., description="Stable public identifier slug, e.g. data-001")
+    service_id: str = Field(..., description="Stable public identifier slug, e.g. data-001 or data_001")
     name: str = Field(..., min_length=2, max_length=128)
     category: ServiceCategory = Field(..., description="Category: data, scraping, or inference")
+    capabilities: List[str] = Field(default_factory=list, description="Capability URIs, e.g. data.lookup.v1")
     description: str = Field(default="", max_length=1000)
     endpoint_url: str = Field(..., description="Public or internal endpoint URL")
     price_usdc: str = Field(..., description="Decimal USDC price, e.g. '0.002000'")
@@ -39,6 +40,7 @@ class ServiceRecord(BaseModel):
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     is_active: bool = Field(default=True)
     enabled: bool = Field(default=True)
+    is_demo_seed: bool = Field(default=True, description="True for demo/seed records, False for live registrations")
     registry_version: str = Field(default="1.0.0")
     reputation: Optional[ServiceReputationSummary] = Field(default_factory=ServiceReputationSummary)
 
@@ -75,6 +77,15 @@ class ServiceListResponse(BaseModel):
     def services(self) -> List[ServiceRecord]:
         return self.items
 
+    def __iter__(self):
+        return iter(self.items)
+
+    def __getitem__(self, item):
+        return self.items[item]
+
+    def __len__(self):
+        return len(self.items)
+
     def model_dump(self, *args, **kwargs):
         data = super().model_dump(*args, **kwargs)
         # Ensure both 'items' and 'services' are accessible in JSON responses
@@ -86,6 +97,7 @@ class ServiceRegistrationRequest(BaseModel):
     service_id: str = Field(..., min_length=3, max_length=64)
     name: str = Field(..., min_length=2, max_length=128)
     category: ServiceCategory
+    capabilities: List[str] = Field(default_factory=list)
     description: str = Field(default="")
     endpoint_url: str
     price_usdc: str

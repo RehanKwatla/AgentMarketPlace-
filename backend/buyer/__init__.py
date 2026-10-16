@@ -1,21 +1,22 @@
-"""Buyer subsystem module owned by Member 3."""
-from .router import router
-from .service import BuyerService, buyer_service
-from .planner import TaskPlanner
-from .selector import ServiceSelector
-from .plan_validator import PlanValidator, ExecutionPlan, PlannedCall
-from .output_validator import OutputValidator
-from .aggregator import ResultAggregator
-from .explanation import ExplanationGenerator
-from .schemas import (
+"""Buyer subsystem exports."""
+from backend.buyer.routes import router
+from backend.buyer.service import BuyerService, buyer_service
+from backend.buyer.planner import TaskPlanner
+from backend.buyer.plan_validator import PlanValidator, ExecutionPlan, PlannedCall
+from backend.buyer.selector import ServiceSelector
+from backend.buyer.aggregator import ResultAggregator
+from backend.buyer.output_validator import OutputValidator
+from backend.buyer.explanation import ExplanationGenerator
+from backend.buyer.repository import TaskRepository, task_repository, PersistenceError
+from backend.buyer.schemas import (
     TaskStatus,
     CallStatus,
     TaskCreationRequest,
     TaskCreationResponse,
     TaskDetailResponse,
+    TaskResultResponse,
     TaskCallsResponse,
     ServiceCallRecord,
-    PurchaseExplanation,
 )
 
 __all__ = [
@@ -23,19 +24,22 @@ __all__ = [
     "BuyerService",
     "buyer_service",
     "TaskPlanner",
-    "ServiceSelector",
     "PlanValidator",
     "ExecutionPlan",
     "PlannedCall",
-    "OutputValidator",
+    "ServiceSelector",
     "ResultAggregator",
+    "OutputValidator",
     "ExplanationGenerator",
+    "TaskRepository",
+    "task_repository",
+    "PersistenceError",
     "TaskStatus",
     "CallStatus",
     "TaskCreationRequest",
     "TaskCreationResponse",
     "TaskDetailResponse",
+    "TaskResultResponse",
     "TaskCallsResponse",
     "ServiceCallRecord",
-    "PurchaseExplanation",
 ]

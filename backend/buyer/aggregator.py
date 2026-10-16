@@ -1,64 +1,70 @@
-"""Result Aggregator combining validated seller outputs with strict provenance."""
+"""Result Aggregator combining validated outputs and provenance."""
 from typing import Any, Dict, List
 from backend.buyer.schemas import CallStatus, ServiceCallRecord
 
 
 class ResultAggregator:
-    """Aggregates multi-service outputs into a structured final response with provenance."""
+    """Combines heterogeneous responses from multiple seller agents into unified result payload."""
 
-    def aggregate(
+    def aggregate_results(
         self,
         task_prompt: str,
         calls: List[ServiceCallRecord]
     ) -> Dict[str, Any]:
-        """Aggregate output payloads with source provenance."""
-        accepted_calls = [c for c in calls if c.status == CallStatus.SUCCEEDED and c.output]
+        """Aggregate outputs from all succeeded calls with provenance tracking."""
+        successful_calls = [c for c in calls if c.status == CallStatus.SUCCEEDED and c.output]
 
-        extracted_data = {}
-        scraped_content = []
-        inference_synthesis = []
-        sources = []
+        combined: Dict[str, Any] = {
+            "summary": "",
+            "market_data": {},
+            "web_sources": [],
+            "provenance": []
+        }
 
-        for c in accepted_calls:
+        inference_summaries: List[str] = []
+
+        for c in successful_calls:
+            category_val = c.category.value if hasattr(c.category, "value") else str(c.category)
             out = c.output or {}
-            sources.append({
+
+            combined["provenance"].append({
                 "service_id": c.service_id,
-                "category": c.category.value,
+                "category": category_val,
                 "call_id": c.call_id
             })
 
-            if c.category.value == "data":
-                extracted_data[out.get("symbol", "ASSET")] = {
+            if category_val == "data":
+                sym = out.get("symbol", "UNKNOWN")
+                combined["market_data"][sym] = {
                     "price": out.get("price"),
                     "volume_24h": out.get("volume_24h"),
                     "timestamp": out.get("timestamp")
                 }
-            elif c.category.value == "scraping":
-                scraped_content.append({
+            elif category_val == "scraping":
+                combined["web_sources"].append({
                     "url": out.get("url"),
                     "title": out.get("title"),
                     "content": out.get("content")
                 })
-            elif c.category.value == "inference":
-                inference_synthesis.append(out.get("response", ""))
+            elif category_val == "inference":
+                inference_summaries.append(out.get("response", ""))
 
-        # Synthesize overview
-        summary_parts = []
-        if inference_synthesis:
-            summary_parts.extend(inference_synthesis)
-        if extracted_data:
-            data_strs = [f"{sym}: ${d.get('price')} (24h Vol: ${d.get('volume_24h')})" for sym, d in extracted_data.items()]
-            summary_parts.append(f"Market Data: {'; '.join(data_strs)}")
-        if scraped_content:
-            titles = [s.get("title", s.get("url", "")) for s in scraped_content]
-            summary_parts.append(f"Scraped Web Sources: {', '.join(titles)}")
+        if inference_summaries:
+            combined["summary"] = "\n\n".join(inference_summaries)
+        else:
+            # Fallback synthesis summary if inference call was omitted
+            data_parts = []
+            if combined["market_data"]:
+                for s, d in combined["market_data"].items():
+                    data_parts.append(f"{s}: ${d.get('price')} (24h Vol: ${d.get('volume_24h')})")
+            sources_parts = [w.get("title", w.get("url")) for w in combined["web_sources"] if w]
 
-        combined_summary = "\n\n".join(summary_parts) if summary_parts else "No validated outputs available."
+            summary_lines = [f"Synthesized task execution for: '{task_prompt}'"]
+            if data_parts:
+                summary_lines.append(f"Market Data: {', '.join(data_parts)}")
+            if sources_parts:
+                summary_lines.append(f"Scraped Sources: {', '.join(sources_parts)}")
 
-        return {
-            "summary": combined_summary,
-            "market_data": extracted_data,
-            "web_sources": scraped_content,
-            "provenance": sources,
-            "total_services_executed": len(accepted_calls)
-        }
+            combined["summary"] = "\n".join(summary_lines)
+
+        return combined

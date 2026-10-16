@@ -1,5 +1,5 @@
-"""Registry Service layer managing service discovery, filtering, and seeding."""
-import logging
+"""Service Registry Business Logic and Catalog Management."""
+import re
 from typing import Dict, List, Optional
 from backend.shared.config import get_settings
 from backend.shared.constants import (
@@ -10,36 +10,35 @@ from backend.shared.constants import (
 )
 from backend.registry.schemas import (
     ServiceRecord,
-    ServiceReputationSummary,
     ServiceListResponse,
+    ServiceReputationSummary,
 )
 from backend.registry.validation import validate_service_registration
 
-logger = logging.getLogger(__name__)
-
 
 class RegistryService:
-    """Manages discoverable microservice records with multi-criteria filtering."""
+    """In-memory service registry with persistence interfaces and Member 4 reputation link."""
 
     def __init__(self):
         self._services: Dict[str, ServiceRecord] = {}
-        self._aliases: Dict[str, str] = {}  # E.g. "data_001" -> "data-001"
-        self._seed_default_services()
+        self._aliases: Dict[str, str] = {}
+        self._load_seed_services()
 
-    def _normalize_id(self, service_id: str) -> str:
-        """Normalize dashes and underscores for robust lookup."""
-        return service_id.strip().lower()
+    @staticmethod
+    def _normalize_id(service_id: str) -> str:
+        return service_id.strip().lower().replace("-", "_")
 
-    def _seed_default_services(self) -> None:
-        """Seed registry with the three mandatory canonical sellers."""
+    def _load_seed_services(self) -> None:
+        """Seed the registry with the three canonical seller services labeled as demo/seed data."""
         settings = get_settings()
 
-        canonical_sellers = [
+        seed_sellers = [
             ServiceRecord(
                 service_id="data_001",
-                name="Structured Financial & Market Data Seller",
+                name="Alpha Financial Market Data [DEMO SEED]",
                 category=ServiceCategory.DATA,
-                description="Returns real-time and historical asset market prices, 24h trading statistics, and financial metrics.",
+                capabilities=["data.lookup.v1", "crypto.market.rates"],
+                description="[DEMO SEED] Provides real-time cryptocurrency and asset prices with 24h market volume statistics.",
                 endpoint_url=settings.data_seller_endpoint,
                 price_usdc="0.002",
                 price_atomic=2000,
@@ -50,7 +49,7 @@ class RegistryService:
                     "type": "object",
                     "required": ["symbol"],
                     "properties": {
-                        "symbol": {"type": "string", "description": "Asset ticker symbol, e.g. ETH, BTC"}
+                        "symbol": {"type": "string", "example": "ETH", "description": "Asset ticker symbol"}
                     }
                 },
                 output_schema={
@@ -65,22 +64,27 @@ class RegistryService:
                 },
                 enabled=True,
                 is_active=True,
+                is_demo_seed=True,
                 registry_version="1.0.0",
                 reputation=ServiceReputationSummary(
-                    success_rate=0.98,
-                    median_latency_ms=210.0,
-                    total_calls=48,
-                    successful_calls=47,
+                    service_id="data_001",
+                    reputation_score=98.5,
+                    success_rate=0.99,
+                    median_latency_ms=120.0,
+                    latency_p95_ms=180.0,
+                    total_calls=120,
+                    successful_calls=119,
                     paid_output_rejected_calls=1,
-                    listed_price_usdc="0.002000",
+                    listed_price_usdc="0.002",
                     last_call_at="2026-10-16T12:00:00Z"
                 )
             ),
             ServiceRecord(
                 service_id="scraping_001",
-                name="Web Extraction & Markdown Scraping Seller",
+                name="Web Markdown & Content Extractor [DEMO SEED]",
                 category=ServiceCategory.SCRAPING,
-                description="Fetches public web targets, strips boilerplate, and returns clean structured text or markdown.",
+                capabilities=["scraping.extract.v1", "web.markdown.fetch"],
+                description="[DEMO SEED] Fetches remote URLs and extracts clean semantic markdown text with structural metadata.",
                 endpoint_url=settings.scraping_seller_endpoint,
                 price_usdc="0.003",
                 price_atomic=3000,
@@ -91,7 +95,7 @@ class RegistryService:
                     "type": "object",
                     "required": ["url"],
                     "properties": {
-                        "url": {"type": "string", "description": "Target webpage URL"}
+                        "url": {"type": "string", "format": "uri", "example": "https://ethereum.org"}
                     }
                 },
                 output_schema={
@@ -106,22 +110,27 @@ class RegistryService:
                 },
                 enabled=True,
                 is_active=True,
+                is_demo_seed=True,
                 registry_version="1.0.0",
                 reputation=ServiceReputationSummary(
+                    service_id="scraping_001",
+                    reputation_score=96.0,
                     success_rate=0.96,
                     median_latency_ms=450.0,
-                    total_calls=32,
-                    successful_calls=31,
-                    paid_output_rejected_calls=1,
+                    latency_p95_ms=680.0,
+                    total_calls=45,
+                    successful_calls=43,
+                    paid_output_rejected_calls=2,
                     listed_price_usdc="0.003",
                     last_call_at="2026-10-16T12:05:00Z"
                 )
             ),
             ServiceRecord(
                 service_id="inference_001",
-                name="LLM Synthesis & Reasoning Inference Seller",
+                name="LLM Synthesis & Reasoning Engine [DEMO SEED]",
                 category=ServiceCategory.INFERENCE,
-                description="Performs analytical reasoning, summarization, and data synthesis from structured/unstructured inputs.",
+                capabilities=["inference.summarize.v1", "ai.reasoning.synthesis"],
+                description="[DEMO SEED] Performs analytical reasoning, summarization, and data synthesis from structured/unstructured inputs.",
                 endpoint_url=settings.inference_seller_endpoint,
                 price_usdc="0.004",
                 price_atomic=4000,
@@ -147,29 +156,33 @@ class RegistryService:
                 },
                 enabled=True,
                 is_active=True,
+                is_demo_seed=True,
                 registry_version="1.0.0",
                 reputation=ServiceReputationSummary(
+                    service_id="inference_001",
+                    reputation_score=99.0,
                     success_rate=0.99,
                     median_latency_ms=620.0,
-                    total_calls=64,
-                    successful_calls=63,
-                    paid_output_rejected_calls=0,
-                    listed_price_usdc="0.004000",
+                    latency_p95_ms=890.0,
+                    total_calls=80,
+                    successful_calls=79,
+                    paid_output_rejected_calls=1,
+                    listed_price_usdc="0.004",
                     last_call_at="2026-10-16T12:10:00Z"
                 )
             )
         ]
 
-        for s in canonical_sellers:
+        for s in seed_sellers:
             self.register_service(s)
 
     def register_service(self, service: ServiceRecord) -> None:
-        """Register or update a service record with schema validation."""
+        """Register or update a service record with strict server-side schema validation."""
         validate_service_registration(service.model_dump())
         primary_id = service.service_id
         self._services[primary_id] = service
 
-        # Register aliases (e.g. data_001 -> data-001 and vice-versa)
+        # Register normalized aliases (e.g. data_001 <-> data-001)
         alt_id_1 = primary_id.replace("-", "_")
         alt_id_2 = primary_id.replace("_", "-")
         self._aliases[self._normalize_id(primary_id)] = primary_id
@@ -177,7 +190,7 @@ class RegistryService:
         self._aliases[self._normalize_id(alt_id_2)] = primary_id
 
     def get_service(self, service_id: str) -> Optional[ServiceRecord]:
-        """Lookup service with alias resolution (supporting data_001 and data-001)."""
+        """Lookup service with alias resolution (supporting both data_001 and data-001)."""
         normalized = self._normalize_id(service_id)
         resolved_id = self._aliases.get(normalized, service_id)
         service = self._services.get(resolved_id)
@@ -187,10 +200,40 @@ class RegistryService:
             return copy_svc
         return service
 
+    def get_active_service(self, service_id: str) -> Optional[ServiceRecord]:
+        """Lookup service for buyer selection: excludes disabled services even if they exist."""
+        service = self.get_service(service_id)
+        if not service or not service.enabled or not service.is_active:
+            return None
+        return service
+
     def get_reputation(self, service_id: str) -> Optional[ServiceReputationSummary]:
+        """Retrieve observed provider reputation through Member 4's ledger/reputation interface if available."""
         service = self.get_service(service_id)
         if not service:
             return None
+
+        # Check Member 4's ReputationCalculator interface
+        try:
+            from backend.ledger.reputation import ReputationCalculator
+            calc = ReputationCalculator()
+            metrics = calc.calculate_for_service(service.service_id)
+            if metrics and metrics.total_calls > 0:
+                return ServiceReputationSummary(
+                    service_id=service.service_id,
+                    reputation_score=metrics.reputation_score,
+                    success_rate=metrics.success_rate,
+                    median_latency_ms=metrics.median_latency_ms,
+                    latency_p95_ms=service.reputation.latency_p95_ms if service.reputation else 120.0,
+                    total_calls=metrics.total_calls,
+                    successful_calls=metrics.successful_calls,
+                    paid_output_rejected_calls=metrics.schema_invalid_counts,
+                    listed_price_usdc=service.price_usdc
+                )
+        except Exception:
+            pass
+
+        # Fallback to recorded reputation summary
         rep = service.reputation or ServiceReputationSummary(listed_price_usdc=service.price_usdc)
         rep.service_id = service.service_id
         return rep
@@ -201,16 +244,20 @@ class RegistryService:
         max_price_usdc: Optional[str] = None,
         min_price_usdc: Optional[str] = None,
         active: Optional[bool] = None,
+        enabled: Optional[bool] = None,
+        is_active: Optional[bool] = None,
         q: Optional[str] = None,
+        capability: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> ServiceListResponse:
-        """Search and filter services according to API contract specification."""
+        """Search and filter services according to agreed API contracts."""
         results = list(self._services.values())
 
         # 1. Filter by enabled / active
-        if active is not None:
-            results = [s for s in results if (s.enabled == active and s.is_active == active)]
+        filter_status = enabled if enabled is not None else (is_active if is_active is not None else active)
+        if filter_status is not None:
+            results = [s for s in results if (s.enabled == filter_status and s.is_active == filter_status)]
 
         # 2. Filter by category
         if category:
@@ -220,17 +267,25 @@ class RegistryService:
                 if s.category.value.lower() == cat_clean or s.category == cat_clean
             ]
 
-        # 3. Filter by max price
+        # 3. Filter by capability
+        if capability:
+            cap_clean = capability.strip().lower()
+            results = [
+                s for s in results
+                if any(cap_clean in c.lower() for c in s.capabilities)
+            ]
+
+        # 4. Filter by max price
         if max_price_usdc:
             max_units = usdc_to_base_units(max_price_usdc)
             results = [s for s in results if s.price_atomic <= max_units]
 
-        # 4. Filter by min price
+        # 5. Filter by min price
         if min_price_usdc:
             min_units = usdc_to_base_units(min_price_usdc)
             results = [s for s in results if s.price_atomic >= min_units]
 
-        # 5. Text / capability search (q)
+        # 6. Text / capability query (q)
         if q:
             query = q.strip().lower()
             results = [
@@ -239,6 +294,7 @@ class RegistryService:
                 or query in s.description.lower()
                 or query in s.service_id.lower()
                 or query in s.category.value.lower()
+                or any(query in c.lower() for c in s.capabilities)
             ]
 
         total = len(results)
@@ -252,5 +308,5 @@ class RegistryService:
         )
 
 
-# Global singleton instance for runtime
+# Global singleton instance for app runtime
 registry_service = RegistryService()

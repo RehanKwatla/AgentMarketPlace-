@@ -44,7 +44,7 @@ class PlanValidator:
     ) -> None:
         """Validate execution plan against server-side registry and budget rules."""
         if plan.budget_units <= 0:
-            raise PlanValidationError("Budget must be strictly positive.")
+            raise PlanValidationError("Budget must be strictly positive (> 0).")
 
         if not plan.calls:
             raise PlanValidationError("Execution plan contains no service calls: insufficient budget or no matching services available.")
@@ -56,30 +56,31 @@ class PlanValidator:
                 if dep not in step_ids:
                     raise PlanValidationError(f"Step {c.step_id} depends on unknown step {dep}")
                 if dep >= c.step_id:
-                    raise PlanValidationError(f"Invalid forward dependency from step {c.step_id} to {dep}")
+                    raise PlanValidationError(f"Invalid forward or self dependency from step {c.step_id} to {dep}")
 
-        # 2. Server-side service eligibility & price verification
-        total_base_cost = 0
+        # 2. Server-side registry resolution (do not trust client/model definitions)
+        calculated_cost = 0
         for c in plan.calls:
-            service = self.registry.get_service(c.service_id)
+            service = self.registry.get_active_service(c.service_id)
             if not service:
-                raise PlanValidationError(f"Proposed service '{c.service_id}' does not exist in registry.")
-            if not service.enabled or not service.is_active:
-                raise PlanValidationError(f"Proposed service '{c.service_id}' is disabled or inactive.")
+                raise PlanValidationError(
+                    f"Planned service '{c.service_id}' does not exist or is disabled in the authoritative registry."
+                )
 
-            # Always override any model-provided price with server-side registry price!
-            c.estimated_price_units = service.price_atomic
-            total_base_cost += service.price_atomic
+            # Match exact authoritative price from server-side registry
+            if service.price_atomic <= 0:
+                raise PlanValidationError(f"Invalid registry price for service '{c.service_id}'")
 
-        # 3. Budget Check (Base cost cannot exceed allocated budget)
-        if total_base_cost > plan.budget_units:
+            calculated_cost += service.price_atomic
+
+        # 3. Worst-case cost check including permitted fallbacks
+        if calculated_cost > plan.budget_units:
             raise PlanValidationError(
-                f"Plan cost exceeds budget: Required {total_base_cost} base units, "
-                f"but budget is only {plan.budget_units} base units."
+                f"Worst-case plan cost ({calculated_cost} units) exceeds allocated budget ({plan.budget_units} units)."
             )
 
-        # 4. Concurrency bounds check
-        if plan.max_concurrency < 1:
-            raise PlanValidationError("max_concurrency must be at least 1.")
-        if plan.max_concurrency > 10:
-            raise PlanValidationError("max_concurrency exceeds server limit of 10.")
+        # 4. Concurrency validation
+        if plan.max_concurrency < 1 or plan.max_concurrency > concurrency_limit:
+            raise PlanValidationError(
+                f"Concurrency {plan.max_concurrency} outside allowed range [1, {concurrency_limit}]."
+            )
