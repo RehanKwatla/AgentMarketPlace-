@@ -350,12 +350,73 @@ class BuyerService:
                 call_id=call_id,
                 service_id=planned.service_id,
                 category=ServiceCategory(planned.category),
+                step_id=planned.step_id,
+                depends_on=planned.depends_on,
                 status=CallStatus.REFUSED,
                 listed_price_usdc=base_units_to_usdc(planned.estimated_price_units),
                 error=err
             )
 
-        # 1. Two-phase atomic budget reservation using Member 1 BudgetManager
+        # 1. Dependency-aware execution gate: Check that all upstream dependencies succeeded with valid output
+        if planned.depends_on:
+            unmet_deps = []
+            for dep_id in planned.depends_on:
+                dep_call = upstream_calls.get(dep_id)
+                if not dep_call or dep_call.status != CallStatus.SUCCEEDED or not dep_call.output:
+                    dep_status = dep_call.status.value if dep_call else "missing"
+                    unmet_deps.append(f"step {dep_id} (status: {dep_status})")
+
+            if unmet_deps:
+                err = f"Upstream dependency failed or unfulfilled: {', '.join(unmet_deps)}. Dependent call skipped."
+                warnings.append(err)
+                record = ServiceCallRecord(
+                    call_id=call_id,
+                    service_id=service.service_id,
+                    category=service.category,
+                    step_id=planned.step_id,
+                    depends_on=planned.depends_on,
+                    status=CallStatus.FAILED_AND_NOT_CHARGED,
+                    listed_price_usdc=service.price_usdc,
+                    amount_paid_usdc="0.000000",
+                    error=err,
+                    validation_status="not_applicable"
+                )
+                self.repository.record_call_to_ledger(
+                    task_id=task_id,
+                    request_id=call_id,
+                    service_id=service.service_id,
+                    listed_price=service.price_usdc,
+                    amount_paid="0.000000",
+                    status=LedgerStatus.FAILED_AND_NOT_CHARGED.value,
+                    error_reason=err
+                )
+                return record
+
+        # 2. Recheck remaining budget in atomic BudgetManager before attempting reservation
+        if budget_mgr.available_budget < service.price_atomic:
+            err = f"Budget exhausted: required {service.price_atomic} base units, but only {budget_mgr.available_budget} available."
+            warnings.append(err)
+            self.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=call_id,
+                service_id=service.service_id,
+                listed_price=service.price_usdc,
+                amount_paid="0.000000",
+                status=LedgerStatus.REFUSED.value,
+                error_reason=err
+            )
+            return ServiceCallRecord(
+                call_id=call_id,
+                service_id=service.service_id,
+                category=service.category,
+                step_id=planned.step_id,
+                depends_on=planned.depends_on,
+                status=CallStatus.REFUSED,
+                listed_price_usdc=service.price_usdc,
+                error=err
+            )
+
+        # 3. Two-phase atomic budget reservation using Member 1 BudgetManager
         try:
             await budget_mgr.reserve(res_id, service.price_atomic)
         except Exception as e:
@@ -373,26 +434,53 @@ class BuyerService:
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
+                step_id=planned.step_id,
+                depends_on=planned.depends_on,
                 status=CallStatus.REFUSED,
                 listed_price_usdc=service.price_usdc,
                 error=err
             )
 
-        # 2. Prepare payload incorporating upstream outputs if dependent
-        payload = dict(planned.input_payload)
-        if planned.depends_on:
-            upstream_texts = []
+        # 4. Pass each seller only the validated inputs it requires according to Member 2 schemas
+        if service.category == ServiceCategory.DATA:
+            payload = {"symbol": planned.input_payload.get("symbol", "ETH")}
+        elif service.category == ServiceCategory.SCRAPING:
+            payload = {"url": planned.input_payload.get("url", "https://ethereum.org")}
+        elif service.category == ServiceCategory.INFERENCE:
+            context_blocks = []
             for dep_id in planned.depends_on:
                 dep_call = upstream_calls.get(dep_id)
                 if dep_call and dep_call.output:
-                    upstream_texts.append(json.dumps(dep_call.output))
-            if upstream_texts:
-                payload["prompt"] = (
-                    f"{payload.get('prompt', '')}\n\nContext from previous steps:\n"
-                    + "\n".join(upstream_texts)
-                )
+                    out = dep_call.output
+                    if dep_call.category == ServiceCategory.DATA:
+                        context_blocks.append(
+                            f"Market Data ({out.get('symbol', 'N/A')}): Price ${out.get('price', 'N/A')}, 24h Volume {out.get('volume_24h', 'N/A')}"
+                        )
+                    elif dep_call.category == ServiceCategory.SCRAPING:
+                        title = out.get("title", out.get("url", "Webpage"))
+                        content = out.get("content", "")
+                        context_blocks.append(
+                            f"Scraped Article from {out.get('url', 'N/A')} ({title}):\n{content}"
+                        )
+                    elif dep_call.category == ServiceCategory.INFERENCE:
+                        context_blocks.append(f"Prior Inference Output: {out.get('response', '')}")
 
-        # 3. Execute HTTP Call against Seller with x402 lifecycle
+            base_prompt = planned.input_payload.get("prompt", "")
+            if context_blocks:
+                joined_context = "\n\n".join(context_blocks)
+                synthesized_prompt = f"{base_prompt}\n\nInputs from upstream steps:\n{joined_context}\n\nPlease synthesize an analytical summary."
+            else:
+                synthesized_prompt = base_prompt
+
+            payload = {
+                "prompt": synthesized_prompt,
+                "max_tokens": planned.input_payload.get("max_tokens", 200),
+                "temperature": planned.input_payload.get("temperature", 0.7)
+            }
+        else:
+            payload = dict(planned.input_payload)
+
+        # 5. Execute HTTP Call against Seller with x402 lifecycle
         start_time = time.perf_counter()
         raw_output = None
         tx_hash = None
@@ -479,6 +567,35 @@ class BuyerService:
                 else:
                     error_msg = f"Unexpected status {resp_402.status_code}: {resp_402.text}"
 
+        except asyncio.CancelledError:
+            if payment_dispatched and not paid:
+                uncertain_payment = True
+                error_msg = "Call cancelled after payment authorization dispatched."
+            else:
+                await budget_mgr.release(res_id)
+                error_msg = "Call cancelled before payment challenge completion."
+                record = ServiceCallRecord(
+                    call_id=call_id,
+                    service_id=service.service_id,
+                    category=service.category,
+                    step_id=planned.step_id,
+                    depends_on=planned.depends_on,
+                    status=CallStatus.FAILED_AND_NOT_CHARGED,
+                    listed_price_usdc=service.price_usdc,
+                    amount_paid_usdc="0.000000",
+                    error=error_msg,
+                    validation_status="not_applicable"
+                )
+                self.repository.record_call_to_ledger(
+                    task_id=task_id,
+                    request_id=call_id,
+                    service_id=service.service_id,
+                    listed_price=service.price_usdc,
+                    amount_paid="0.000000",
+                    status=LedgerStatus.FAILED_AND_NOT_CHARGED.value,
+                    error_reason=error_msg
+                )
+                raise
         except httpx.TimeoutException as te:
             if payment_dispatched:
                 uncertain_payment = True
@@ -494,7 +611,7 @@ class BuyerService:
 
         latency = (time.perf_counter() - start_time) * 1000.0
 
-        # 4. Settle Budget & Output Validation
+        # 6. Settle Budget & Output Validation
         if paid:
             await budget_mgr.commit(res_id, service.price_atomic)
             amount_paid = service.price_usdc
@@ -507,6 +624,8 @@ class BuyerService:
                     call_id=call_id,
                     service_id=service.service_id,
                     category=service.category,
+                    step_id=planned.step_id,
+                    depends_on=planned.depends_on,
                     status=CallStatus.PAID_OUTPUT_REJECTED,
                     listed_price_usdc=service.price_usdc,
                     amount_paid_usdc=amount_paid,
@@ -533,6 +652,8 @@ class BuyerService:
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
+                step_id=planned.step_id,
+                depends_on=planned.depends_on,
                 status=CallStatus.SUCCEEDED,
                 listed_price_usdc=service.price_usdc,
                 amount_paid_usdc=amount_paid,
@@ -554,12 +675,14 @@ class BuyerService:
             return record
 
         elif uncertain_payment:
-            # UNCERTAIN PAYMENT: Do NOT release reservation! Do NOT retry blindly!
+            # UNCERTAIN PAYMENT: Do NOT release reservation! Do NOT retry blindly! Do NOT run fallbacks!
             warnings.append(f"Call to {service.service_id} has uncertain settlement: {error_msg}. Awaiting reconciliation.")
             record = ServiceCallRecord(
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
+                step_id=planned.step_id,
+                depends_on=planned.depends_on,
                 status=CallStatus.PENDING_RECONCILIATION,
                 listed_price_usdc=service.price_usdc,
                 amount_paid_usdc="0.000000",
@@ -579,7 +702,39 @@ class BuyerService:
             return record
 
         else:
+            # Definite non-payment failure: release budget reservation
             await budget_mgr.release(res_id)
+
+            # Check if an eligible fallback exists and can be afforded within remaining budget
+            if planned.allow_fallback and planned.fallback_service_ids:
+                for fb_id in planned.fallback_service_ids:
+                    fb_svc = self.registry.get_service(fb_id)
+                    if not fb_svc or not fb_svc.is_active:
+                        continue
+                    # Recheck remaining budget before scheduling fallback!
+                    if budget_mgr.available_budget < fb_svc.price_atomic:
+                        warnings.append(
+                            f"Fallback to {fb_id} rejected: price {fb_svc.price_atomic} exceeds remaining budget {budget_mgr.available_budget}."
+                        )
+                        continue
+
+                    # Execute fallback
+                    fallbacks.append(f"Service {service.service_id} failed ({error_msg}); running fallback {fb_id}")
+                    fb_plan = planned.model_copy(update={
+                        "service_id": fb_id,
+                        "allow_fallback": False,
+                        "fallback_service_ids": []
+                    })
+                    fb_record = await self._execute_call(
+                        task_id=task_id,
+                        planned=fb_plan,
+                        budget_mgr=budget_mgr,
+                        upstream_calls=upstream_calls,
+                        fallbacks=fallbacks,
+                        warnings=warnings
+                    )
+                    return fb_record
+
             fallbacks.append(f"Call to {service.service_id} failed: {error_msg}")
             assigned_status = CallStatus.REFUSED if policy_violation else CallStatus.FAILED_AND_NOT_CHARGED
             assigned_ledger_status = LedgerStatus.REFUSED if policy_violation else LedgerStatus.FAILED_AND_NOT_CHARGED
@@ -587,6 +742,8 @@ class BuyerService:
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
+                step_id=planned.step_id,
+                depends_on=planned.depends_on,
                 status=assigned_status,
                 listed_price_usdc=service.price_usdc,
                 amount_paid_usdc="0.000000",

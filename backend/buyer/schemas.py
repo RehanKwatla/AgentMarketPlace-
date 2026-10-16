@@ -98,6 +98,8 @@ class ServiceCallRecord(BaseModel):
     call_id: str
     service_id: str
     category: ServiceCategory
+    step_id: Optional[int] = None
+    depends_on: List[int] = Field(default_factory=list)
     status: CallStatus = CallStatus.CREATED
     listed_price_usdc: str
     amount_paid_usdc: str = "0.000000"

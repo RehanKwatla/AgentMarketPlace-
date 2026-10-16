@@ -152,5 +152,26 @@
   6. `test_call_flow_trace_planning_and_validation_precede_payment` [PASSED]
 - Ran full test suite via `python scripts/run_tests.py`: **70 of 70 tests passed (100% pass rate in 1.09s)**.
 
+### Step 12: Dependency-Aware Asynchronous Execution & Integration Demo
+- Updated `backend/buyer/schemas.py`: Added explicit `step_id` and `depends_on` to `ServiceCallRecord`.
+- Enhanced `backend/buyer/service.py`:
+  - Upstream dependency failure gate: Dependent calls verify that all upstream dependencies succeeded (`CallStatus.SUCCEEDED`) with valid outputs. If any dependency failed, the dependent call is skipped (`FAILED_AND_NOT_CHARGED`) with zero budget reserved/spent.
+  - Strict input isolation conforming to Member 2's contracts (`DataSellerInput`, `ScrapingSellerInput`, `InferenceSellerInput`). Dependent inference calls synthesize prompts using validated upstream outputs only.
+  - Budget recheck prior to each reservation: Verifies `budget_mgr.available_budget >= service.price_atomic` and fails with `REFUSED` if exhausted.
+  - Safe fallbacks: Fallbacks are strictly forbidden on ambiguous payments (`PENDING_RECONCILIATION`). Clean non-payment failures recheck remaining budget before executing an affordable fallback; expensive fallbacks exceeding budget are rejected.
+  - Bounded concurrency with `asyncio.Semaphore(3)` and per-call timeout/cancellation handling.
+- Implemented comprehensive test suite in `backend/tests/test_buyer_dependency_execution.py` (8 tests):
+  1. `test_sequential_dependencies_and_input_synthesis` [PASSED]
+  2. `test_parallel_execution_of_independent_calls` [PASSED]
+  3. `test_failed_upstream_dependency_skips_dependent_call` [PASSED]
+  4. `test_pre_payment_timeout_releases_budget_reservation` [PASSED]
+  5. `test_concurrency_limit_bounded_by_semaphore` [PASSED]
+  6. `test_budget_exhaustion_refuses_subsequent_calls` [PASSED]
+  7. `test_ambiguous_payment_outcome_never_runs_fallback` [PASSED]
+  8. `test_fallback_budget_safety_recheck` [PASSED]
+- Created end-to-end integration demo in `scripts/demo_m3_orchestration.py` showing Data, Scraping, and Inference executed with clearly labeled service environments.
+- Ran full test suite across all subsystems: **78 of 78 tests passed (100% pass rate in 1.60s)**.
+
+
 
 

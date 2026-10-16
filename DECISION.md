@@ -216,4 +216,28 @@ The Buyer agent cannot operate in a silo. Every paid invocation must interface w
   7. On verified settlement proof -> `PAID`, validate output schema; commit budget.
   8. Synchronously record call in `TaskRecordModel` and Member 4's `ledger_repo`.
 
+---
+
+## Decision 12: Dependency-Aware Asynchronous Execution, Strict Input Isolation, & Safe Fallbacks
+
+### 1. Context & Problem
+In complex agent workflows requiring Data (`data.lookup.v1`), Scraping (`scraping.extract.v1`), and Inference (`inference.summarize.v1`), naïve execution creates several failure modes:
+1. Running dependent calls before upstream outputs exist causes runtime failures.
+2. If an upstream dependency fails, executing downstream calls wastes payments on unfulfillable requests.
+3. Sending unvalidated or extraneous metadata to sellers violates API contracts.
+4. Starting a fallback service when the primary call had an uncertain settlement risks double-spending.
+5. Starting a fallback whose price exceeds the remaining budget causes financial overruns.
+
+### 2. Theory & Logic
+- **Topological & Dependency Gating:** Stage 0 executes independent calls (Data & Scraping) concurrently bounded by `asyncio.Semaphore(3)`. Stage 1 (Inference) depends on Stage 0. Prior to reserving budget or executing a dependent call, the buyer checks that all upstream dependencies succeeded (`CallStatus.SUCCEEDED`) and produced valid outputs. If any upstream dependency failed or was not charged, the dependent call is automatically skipped (`FAILED_AND_NOT_CHARGED`) with zero funds spent.
+- **Strict Input Isolation:** Each seller receives only the validated fields defined by Member 2's contracts:
+  - Data seller: `DataSellerInput(symbol=...)`
+  - Scraping seller: `ScrapingSellerInput(url=...)`
+  - Inference seller: `InferenceSellerInput(prompt=..., max_tokens=..., temperature=...)`
+  When Inference depends on upstream calls, its `prompt` is synthesized strictly from validated upstream outputs (e.g. market rates and extracted text).
+- **Two-Phase Fallback Safety:**
+  - Fallbacks are **STRICTLY FORBIDDEN** if the primary call resulted in an uncertain payment outcome (`PENDING_RECONCILIATION`), as the payment may settle on-chain.
+  - If the primary call failed with a clean non-payment error (`FAILED_AND_NOT_CHARGED`), the budget reservation is released, and the fallback's price is checked against `budget_mgr.available_budget`. If the fallback price exceeds available funds, it is rejected and not executed.
+- **Member 4 Audit Completeness:** All call records store explicit `step_id`, `depends_on`, `service_id`, `amount_paid`, and `tx_hash` synchronized with Member 4's `ledger_repo` and SQL `LedgerRecordModel`.
+
 
