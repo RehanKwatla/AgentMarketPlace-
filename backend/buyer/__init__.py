@@ -8,6 +8,8 @@ from backend.buyer.aggregator import ResultAggregator
 from backend.buyer.output_validator import OutputValidator
 from backend.buyer.explanation import ExplanationGenerator
 from backend.buyer.repository import TaskRepository, task_repository, PersistenceError
+from backend.buyer.buyer_agent import BuyerAgent
+from backend.buyer.payment_client import BuyerPaymentClient
 from backend.buyer.schemas import (
     TaskStatus,
     CallStatus,
@@ -23,6 +25,8 @@ __all__ = [
     "router",
     "BuyerService",
     "buyer_service",
+    "BuyerAgent",
+    "BuyerPaymentClient",
     "TaskPlanner",
     "PlanValidator",
     "ExecutionPlan",
