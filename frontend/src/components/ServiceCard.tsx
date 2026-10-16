@@ -1,6 +1,6 @@
 import React from 'react';
 import { ServiceDefinition, ReputationMetrics } from '../types';
-import { Database, Globe, Cpu, ArrowUpRight, Zap, Clock, Activity } from 'lucide-react';
+import { ArrowUpRight, Activity } from 'lucide-react';
 
 interface ServiceCardProps {
   service: ServiceDefinition;
@@ -15,88 +15,47 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   onSelect, 
   onViewDetail 
 }) => {
-  const getCategoryTheme = (category: string) => {
-    switch (category) {
-      case 'data':
-        return {
-          icon: Database,
-          badgeBg: 'bg-[#52758D]/15 text-[#52758D] border-[#52758D]/30',
-          accent: 'text-[#52758D]',
-        };
-      case 'scraping':
-        return {
-          icon: Globe,
-          badgeBg: 'bg-[#FF982E]/10 text-[#FF982E] border-[#FF982E]/20',
-          accent: 'text-[#FF982E]',
-        };
-      case 'inference':
-        return {
-          icon: Cpu,
-          badgeBg: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-          accent: 'text-purple-400',
-        };
-      default:
-        return {
-          icon: Zap,
-          badgeBg: 'bg-[#FF982E]/10 text-[#FF982E] border-[#FF982E]/20',
-          accent: 'text-[#FF982E]',
-        };
-    }
-  };
-
-  const theme = getCategoryTheme(service.category);
-  const CategoryIcon = theme.icon;
-
   const totalCalls = reputation?.total_calls ?? 0;
   const latency = reputation && reputation.median_latency_ms > 0 ? `${reputation.median_latency_ms.toFixed(0)}ms` : null;
 
   return (
-    <div className="rounded-xl p-5 flex flex-col justify-between border border-[#303133] hover:border-[#FF982E]/50 bg-[#191A1C] transition-all duration-200 group">
+    <div className="wallet-card rounded-lg p-4 flex flex-col justify-between border border-[rgba(120,160,153,0.18)] hover:border-[rgba(54,214,200,0.35)] transition-colors">
       <div>
-        {/* Top Meta Line: Category Badge + Price */}
-        <div className="flex items-center justify-between gap-2 mb-3.5">
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 text-[11px] uppercase font-mono px-2.5 py-1 rounded-md border font-semibold tracking-wide ${theme.badgeBg}`}>
-              <CategoryIcon className="w-3 h-3" />
-              {service.category}
-            </span>
-            <span className="text-[10px] font-mono text-[#777980] px-1.5 py-0.5 rounded bg-[#111214] border border-[#303133]">
-              {service.service_id}
-            </span>
-          </div>
-
-          <div className="text-right">
-            <span className="text-sm font-mono text-[#FF982E] font-bold bg-[#FF982E]/10 px-2 py-0.5 rounded border border-[#FF982E]/20">
-              {service.price_usdc} USDC
-            </span>
-          </div>
+        {/* Top: Category & Price */}
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <span className="capitalize text-[11px] font-medium px-2 py-0.5 rounded bg-[#161B1A] text-[#9BA5A2] border border-[rgba(120,160,153,0.18)]">
+            {service.category}
+          </span>
+          <span className="text-xs font-mono font-medium text-[#36D6C8]">
+            {service.price_usdc} USDC
+          </span>
         </div>
 
         {/* Title & Description */}
-        <div className="mb-4">
+        <div className="mb-3">
           <h3 
-            className="text-base font-semibold text-[#F5F5F5] group-hover:text-[#FF982E] transition-colors flex items-center gap-1 cursor-pointer"
+            className="text-sm font-semibold text-[#F4F7F6] hover:text-[#36D6C8] transition-colors flex items-center gap-1 cursor-pointer"
             onClick={() => onViewDetail && onViewDetail(service)}
           >
             <span>{service.name}</span>
-            <ArrowUpRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#FF982E]" />
+            <ArrowUpRight className="w-3.5 h-3.5 text-[#9BA5A2]" />
           </h3>
-          <p className="text-xs text-[#A0A1A5] mt-1.5 leading-relaxed line-clamp-2">
-            {service.description || 'Microservice participating in autonomous x402 payment workflows.'}
+          <p className="text-xs text-[#9BA5A2] mt-1 leading-relaxed line-clamp-2">
+            {service.description || 'Verified microservice for autonomous x402 payment workflows.'}
           </p>
         </div>
 
         {/* Endpoint Info */}
-        <div className="bg-[#111214] rounded-lg p-2.5 border border-[#303133] font-mono text-[11px] space-y-1 mb-4">
-          <div className="flex items-center justify-between text-[#A0A1A5]">
-            <span>Route:</span>
-            <span className="text-[#F5F5F5] truncate max-w-[200px]" title={service.endpoint_url}>
+        <div className="bg-[#0D1010] rounded p-2 border border-[rgba(120,160,153,0.14)] font-mono text-[11px] space-y-1 mb-3">
+          <div className="flex items-center justify-between text-[#9BA5A2]">
+            <span className="text-[#6B7673]">Route:</span>
+            <span className="text-[#F4F7F6] truncate max-w-[180px]" title={service.endpoint_url}>
               {service.endpoint_url}
             </span>
           </div>
-          <div className="flex items-center justify-between text-[#A0A1A5]">
-            <span>Payee:</span>
-            <span className="text-[#777980] font-mono text-[10px]" title={service.pay_to}>
+          <div className="flex items-center justify-between text-[#9BA5A2]">
+            <span className="text-[#6B7673]">PayTo:</span>
+            <span className="text-[#36D6C8] text-[10px]" title={service.pay_to}>
               {service.pay_to ? `${service.pay_to.slice(0, 6)}...${service.pay_to.slice(-4)}` : 'Auto'}
             </span>
           </div>
@@ -104,48 +63,34 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
       </div>
 
       {/* Footer Metrics & Actions */}
-      <div className="pt-3 border-t border-[#303133]">
-        <div className="flex items-center justify-between text-xs font-mono mb-3">
-          <div className="text-[#A0A1A5]">
+      <div className="pt-2.5 border-t border-[rgba(120,160,153,0.14)]">
+        <div className="flex items-center justify-between text-xs mb-2.5">
+          <div className="text-[#9BA5A2] text-[11px]">
             {totalCalls > 0 ? (
-              <span className="flex items-center gap-1 text-[#F5F5F5]">
-                <Activity className="w-3 h-3 text-[#777980]" />
-                {totalCalls} calls
-                {latency && <span className="text-[#777980] ml-1 font-mono">({latency})</span>}
+              <span className="flex items-center gap-1 text-[#F4F7F6] font-mono">
+                <Activity className="w-3 h-3 text-[#42C995]" />
+                {totalCalls} calls {latency && `(${latency})`}
               </span>
             ) : (
-              <span className="text-[#777980] text-[11px]">No calls yet</span>
+              <span className="text-[#6B7673]">Ready for calls</span>
             )}
           </div>
-
-          <div className="flex items-center gap-2">
-            {latency && (
-              <span className="flex items-center gap-1 text-[#777980] text-[11px]">
-                <Clock className="w-3 h-3" />
-                {latency}
-              </span>
-            )}
-            {reputation && (
-              <span className="text-[#58B779] font-bold text-xs">
-                {reputation.reputation_score}%
-              </span>
-            )}
-          </div>
+          <span className="text-[10px] font-mono text-[#9BA5A2]">Base Sepolia</span>
         </div>
 
         <div className="flex items-center gap-2">
           {onViewDetail && (
             <button
               onClick={() => onViewDetail(service)}
-              className="flex-1 py-1.5 px-3 rounded-lg bg-[#202123] hover:bg-[#303133] text-[#F5F5F5] text-xs font-medium transition-colors border border-[#303133]"
+              className="flex-1 py-1 px-2.5 rounded bg-[#161B1A] hover:bg-[#1C2221] text-[#9BA5A2] hover:text-[#F4F7F6] text-xs font-medium border border-[rgba(120,160,153,0.2)] transition-colors cursor-pointer text-center"
             >
-              Inspect Specs
+              Details
             </button>
           )}
           {onSelect && (
             <button
               onClick={() => onSelect(service)}
-              className="flex-1 py-1.5 px-3 rounded-lg bg-[#FF982E] hover:bg-[#E98522] text-[#101112] text-xs font-bold transition-colors shadow-sm"
+              className="flex-1 py-1 px-2.5 rounded bg-[#36D6C8] hover:bg-[#45DFD2] text-[#0B0D0D] text-xs font-medium transition-colors cursor-pointer text-center"
             >
               Use in Task
             </button>

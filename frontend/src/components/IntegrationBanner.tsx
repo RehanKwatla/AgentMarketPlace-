@@ -12,24 +12,26 @@ export const IntegrationBanner: React.FC = () => {
   };
 
   return (
-    <div className="bg-[#171819] border border-[#303133] rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+    <div className="wallet-card rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono border border-[rgba(120,160,153,0.20)]">
       <div className="flex items-center gap-3">
-        <div className="w-7 h-7 rounded bg-[#FF982E]/10 border border-[#FF982E]/30 flex items-center justify-center shrink-0">
-          <Terminal className="w-3.5 h-3.5 text-[#FF982E]" />
+        <div className="w-8 h-8 rounded-lg bg-[#141A19] border border-[rgba(54,214,200,0.3)] flex items-center justify-center shrink-0 text-[#36D6C8]">
+          <Terminal className="w-4 h-4" />
         </div>
         <div>
-          <span className="font-bold text-[#F5F5F5] font-sans">Install the Agentic Market skill.</span>
-          <span className="text-[#96989D] ml-2 hidden lg:inline">Paste once. Your agent can discover and pay for services.</span>
+          <span className="font-bold text-[#F4F7F6] font-sans text-sm">Install the Agentic Market Skill</span>
+          <span className="text-[#A0AAA7] ml-2 hidden lg:inline font-sans text-xs">
+            Run once in your agent runtime to enable autonomous x402 discovery and payment settlement.
+          </span>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="bg-[#101112] border border-[#303133] rounded px-3 py-1.5 text-[#F5F5F5] text-[11px] truncate max-w-xs sm:max-w-md">
+        <div className="bg-[#0D1111] border border-[rgba(120,160,153,0.20)] rounded-lg px-3 py-1.5 text-[#F4F7F6] text-[11px] truncate max-w-xs sm:max-w-md font-mono">
           {command}
         </div>
         <button
           onClick={handleCopy}
-          className="px-3 py-1.5 rounded bg-[#FF982E] hover:bg-[#FF982E]/90 text-[#101112] font-bold text-xs flex items-center gap-1 shrink-0 transition-colors"
+          className="px-3.5 py-1.5 rounded-lg bg-[#36D6C8] hover:bg-[#53E3D6] text-[#0B0D0D] font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-sm shadow-[#36D6C8]/20"
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           <span>{copied ? 'Copied' : 'Copy'}</span>

@@ -7,13 +7,25 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#eff6ff',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-        }
-      }
+        theme: {
+          bg: '#0B0D0D',
+          secondary: '#101313',
+          card: 'rgba(16, 22, 22, 0.88)',
+          elevated: '#141A19',
+          input: '#0D1111',
+          border: 'rgba(120, 160, 153, 0.20)',
+          borderStrong: 'rgba(160, 190, 183, 0.38)',
+          text: '#F4F7F6',
+          secondaryText: '#A0AAA7',
+          mutedText: '#6F7C78',
+          accent: '#36D6C8',
+          accentHover: '#53E3D6',
+          deepTeal: '#124A45',
+          success: '#42C995',
+          warning: '#E7B96A',
+          error: '#E16D6D',
+        },
+      },
     },
   },
   plugins: [],

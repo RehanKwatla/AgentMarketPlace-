@@ -16,26 +16,30 @@ export const PaymentTicker: React.FC<PaymentTickerProps> = ({ records, totalVolu
   ];
 
   return (
-    <div className="bg-[#171819] border-b border-[#303133] h-11 px-4 sm:px-6 flex items-center overflow-x-auto text-xs font-mono text-[#96989D] select-none scrollbar-none">
+    <div className="bg-[#0B0D0D]/95 border-b border-[rgba(120,160,153,0.18)] h-11 px-4 sm:px-6 flex items-center overflow-x-auto text-xs font-mono text-[#A0AAA7] select-none scrollbar-none backdrop-blur-sm">
       <div className="flex items-center gap-6 shrink-0 mr-6">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase font-bold text-[#96989D]">1D PAYMENT VOL:</span>
-          <span className="text-[#F5F5F5] font-bold text-sm tracking-tight">${totalVolumeUsdc} <span className="text-[#FF982E] text-xs">USDC</span></span>
+          <span className="text-[10px] uppercase font-bold text-[#6F7C78] tracking-wider">24H VOLUME:</span>
+          <span className="text-[#F4F7F6] font-bold text-sm tracking-tight">
+            ${totalVolumeUsdc} <span className="text-[#36D6C8] text-xs">USDC</span>
+          </span>
         </div>
-        <div className="h-4 w-px bg-[#303133]" />
+        <div className="h-4 w-px bg-[rgba(120,160,153,0.20)]" />
       </div>
 
       <div className="flex items-center gap-5 overflow-hidden whitespace-nowrap">
         {displayRecords.slice(0, 8).map((r, i) => (
           <div key={r.request_id + i} className="flex items-center gap-2 shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#FF982E] animate-pulse" />
-            <span className="text-[#F5F5F5] font-semibold">{r.buyer_id.slice(0, 8)}...</span>
-            <span className="text-[#96989D]">paid</span>
-            <span className="text-[#FF982E] font-bold">{r.amount_paid} USDC</span>
-            <span className="text-[#96989D]">to</span>
-            <span className="text-[#52758D] font-medium">{r.service_id}</span>
-            <span className="text-[10px] text-[#96989D] bg-[#1D1E20] px-1 py-0.2 rounded border border-[#303133]">Base Sepolia</span>
-            {i < displayRecords.length - 1 && <span className="text-[#303133] ml-2">/</span>}
+            <span className="w-1.5 h-1.5 rounded-full bg-[#36D6C8] animate-pulse" />
+            <span className="text-[#F4F7F6] font-semibold">{r.buyer_id.slice(0, 8)}...</span>
+            <span className="text-[#6F7C78]">settled</span>
+            <span className="text-[#36D6C8] font-bold">{r.amount_paid} USDC</span>
+            <span className="text-[#6F7C78]">via</span>
+            <span className="text-[#42C995] font-medium">{r.service_id}</span>
+            <span className="text-[10px] text-[#A0AAA7] bg-[#141A19] px-1.5 py-0.2 rounded border border-[rgba(120,160,153,0.20)]">
+              Base Sepolia
+            </span>
+            {i < displayRecords.length - 1 && <span className="text-[rgba(120,160,153,0.25)] ml-2">/</span>}
           </div>
         ))}
       </div>

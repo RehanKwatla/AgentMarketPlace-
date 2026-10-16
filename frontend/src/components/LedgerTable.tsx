@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LedgerRecord } from '../types';
 import { StatusBadge } from './ReputationBadge';
-import { ExternalLink, Filter, ChevronRight, Clock } from 'lucide-react';
+import { ExternalLink, Filter } from 'lucide-react';
 
 interface LedgerTableProps {
   records: LedgerRecord[];
@@ -40,138 +40,141 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Filtering Toolbar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-[#171819] p-3 rounded-lg border border-[#303133] text-xs font-mono">
+      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between wallet-card p-2.5 rounded-lg text-xs font-sans">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-[#777980]">
-            <Filter className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-1 text-[#9BA5A2]">
+            <Filter className="w-3.5 h-3.5 text-[#36D6C8]" />
             <span>Filter:</span>
           </div>
 
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-[#101112] border border-[#303133] rounded px-2.5 py-1 text-[#F5F5F5] focus:outline-none focus:border-[#FF982E]"
+            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8]"
           >
             <option value="all">All Statuses ({records.length})</option>
-            <option value="paid">Verified Paid</option>
+            <option value="paid">Settled</option>
             <option value="paid output rejected">Output Rejected</option>
-            <option value="refused">Refused Before Payment</option>
+            <option value="refused">Refused</option>
             <option value="failed and not charged">Failed (No Charge)</option>
           </select>
 
           <select
             value={filterService}
             onChange={(e) => setFilterService(e.target.value)}
-            className="bg-[#101112] border border-[#303133] rounded px-2.5 py-1 text-[#F5F5F5] focus:outline-none focus:border-[#FF982E]"
+            className="bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1 text-[#F4F7F6] focus:outline-none focus:border-[#36D6C8]"
           >
             <option value="all">All Services</option>
-            {uniqueServices.map(s => (
-              <option key={s} value={s}>{s}</option>
+            {uniqueServices.map(sid => (
+              <option key={sid} value={sid}>{sid}</option>
             ))}
           </select>
         </div>
 
-        <div className="relative">
+        <div>
           <input
             type="text"
-            placeholder="Search Request ID or Tx..."
+            placeholder="Search ID or Tx hash..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="bg-[#101112] border border-[#303133] rounded px-3 py-1 text-[#F5F5F5] placeholder-[#777980] focus:outline-none focus:border-[#FF982E] w-full sm:w-48"
+            className="w-full sm:w-56 bg-[#0D1010] border border-[rgba(120,160,153,0.18)] rounded-md px-2.5 py-1 text-[#F4F7F6] placeholder-[#6B7673] focus:outline-none focus:border-[#36D6C8]"
           />
         </div>
       </div>
 
-      {/* Main Table */}
-      {filteredRecords.length === 0 ? (
-        <div className="text-center py-12 bg-[#171819] rounded-lg text-[#777980] font-mono text-xs border border-[#303133] p-8 space-y-2">
-          <Clock className="w-8 h-8 text-[#777980] mx-auto" />
-          <p className="text-[#F5F5F5] font-semibold">No ledger records match the selected criteria</p>
-          <p className="text-[#777980]">
-            {records.length === 0 
-              ? 'Execute a buyer task in the Buyer Console to trigger genuine x402 micropayments.'
-              : 'Try clearing your active filters to view all audit entries.'}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-[#171819] rounded-lg overflow-hidden border border-[#303133]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-[#1D1E20] text-[#96989D] border-b border-[#303133] uppercase text-[11px]">
+      {/* Ledger Records Table */}
+      <div className="wallet-card rounded-lg border border-[rgba(120,160,153,0.18)] overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-[rgba(120,160,153,0.16)] bg-[#0E1212] text-[#9BA5A2]">
+                <th className="py-2.5 px-4 font-medium">Request ID</th>
+                <th className="py-2.5 px-4 font-medium">Service</th>
+                <th className="py-2.5 px-4 font-medium">Status</th>
+                <th className="py-2.5 px-4 font-medium">Amount</th>
+                <th className="py-2.5 px-4 font-medium hidden md:table-cell">Latency</th>
+                <th className="py-2.5 px-4 font-medium hidden lg:table-cell">On-Chain Tx</th>
+                <th className="py-2.5 px-4 font-medium text-right">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[rgba(120,160,153,0.12)] text-[#F4F7F6]">
+              {filteredRecords.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-3">Timestamp</th>
-                  <th className="px-4 py-3">Request ID</th>
-                  <th className="px-4 py-3">Service</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Protocol Settlement</th>
-                  <th className="px-4 py-3">Latency</th>
-                  <th className="px-4 py-3">Base Sepolia Tx</th>
-                  <th className="px-3 py-3 text-right">Details</th>
+                  <td colSpan={7} className="text-center py-10 text-[#6B7673]">
+                    No settlement records found in the current filter.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-[#303133]">
-                {filteredRecords.map((r) => {
-                  const isSelected = selectedRequestId === r.request_id;
-                  const explorerLink = getExplorerUrl(r.tx_hash);
+              ) : (
+                filteredRecords.map((record) => {
+                  const isSelected = selectedRequestId === record.request_id;
+                  const explorerUrl = getExplorerUrl(record.tx_hash);
 
                   return (
-                    <tr 
-                      key={r.request_id} 
-                      onClick={() => onSelectRecord && onSelectRecord(r)}
-                      className={`hover:bg-[#1D1E20] transition-colors cursor-pointer ${
-                        isSelected ? 'bg-[#202123] border-l-2 border-l-[#FF982E]' : ''
+                    <tr
+                      key={record.request_id}
+                      onClick={() => onSelectRecord && onSelectRecord(record)}
+                      className={`hover:bg-[#151A1A] cursor-pointer transition-colors ${
+                        isSelected ? 'bg-[rgba(54,214,200,0.06)] border-l-2 border-l-[#36D6C8]' : ''
                       }`}
                     >
-                      <td className="px-4 py-3 text-[#A0A1A5] whitespace-nowrap">
-                        {new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      <td className="py-2.5 px-4 font-mono font-medium text-[#F4F7F6]">
+                        {record.request_id}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-[#F5F5F5]">
-                        <span className="bg-[#111214] px-1.5 py-0.5 rounded border border-[#303133]">
-                          {r.request_id}
-                        </span>
+
+                      <td className="py-2.5 px-4 font-mono text-[#36D6C8]">
+                        {record.service_id}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="text-[#FF982E] hover:underline">{r.service_id}</span>
+
+                      <td className="py-2.5 px-4">
+                        <StatusBadge status={record.status} />
                       </td>
-                      <td className="px-4 py-3 text-[#F5F5F5] font-bold whitespace-nowrap">
-                        {r.amount_paid} <span className="text-[10px] text-[#FF982E]">USDC</span>
+
+                      <td className="py-2.5 px-4 font-mono font-medium">
+                        {record.amount_paid} <span className="text-[11px] text-[#9BA5A2]">USDC</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <StatusBadge status={r.status} />
+
+                      <td className="py-2.5 px-4 font-mono text-[#9BA5A2] hidden md:table-cell">
+                        {record.latency_ms > 0 ? `${record.latency_ms} ms` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[#A0A1A5] whitespace-nowrap">
-                        {r.latency_ms > 0 ? `${r.latency_ms.toFixed(1)} ms` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-[#A0A1A5] whitespace-nowrap">
-                        {r.tx_hash ? (
+
+                      <td className="py-2.5 px-4 hidden lg:table-cell">
+                        {explorerUrl ? (
                           <a
-                            href={explorerLink || '#'}
+                            href={explorerUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 text-[#FF982E] hover:underline font-mono text-[11px]"
-                            title={r.tx_hash}
+                            className="text-[#36D6C8] hover:underline flex items-center gap-1 font-mono text-[11px]"
                           >
-                            <span>{r.tx_hash.slice(0, 8)}...{r.tx_hash.slice(-6)}</span>
-                            <ExternalLink className="w-3 h-3 shrink-0" />
+                            <span>{record.tx_hash?.slice(0, 10)}...</span>
+                            <ExternalLink className="w-3 h-3" />
                           </a>
                         ) : (
-                          <span className="text-[#777980]">—</span>
+                          <span className="text-[#6B7673] font-mono text-[11px]">Testnet Proof</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-right">
-                        <ChevronRight className="w-4 h-4 text-[#777980] inline-block" />
+
+                      <td className="py-2.5 px-4 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectRecord && onSelectRecord(record);
+                          }}
+                          className="px-2 py-0.5 rounded bg-[#161B1A] hover:bg-[#1F2524] text-[#9BA5A2] hover:text-[#F4F7F6] text-xs border border-[rgba(120,160,153,0.2)] transition-colors cursor-pointer"
+                        >
+                          Inspect
+                        </button>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 };

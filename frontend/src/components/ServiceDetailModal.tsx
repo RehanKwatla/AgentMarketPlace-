@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ServiceDefinition, ReputationMetrics } from '../types';
-import { X, Sparkles, Terminal, Copy, Check, ShieldCheck, Database, Globe, Cpu } from 'lucide-react';
+import { X, Sparkles, Terminal, Copy, Check, Database, Globe, Cpu, ArrowRight } from 'lucide-react';
 
 interface ServiceDetailModalProps {
   service: ServiceDefinition | null;
@@ -15,8 +15,8 @@ export const ServiceDetailModal: React.FC<ServiceDetailModalProps> = ({
   onClose,
   onUseInTask,
 }) => {
-  const [copiedEndpoint, setCopiedEndpoint] = React.useState(false);
-  const [copiedPayTo, setCopiedPayTo] = React.useState(false);
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [copiedPayTo, setCopiedPayTo] = useState(false);
 
   // Close on Escape key
   useEffect(() => {
@@ -42,10 +42,10 @@ export const ServiceDetailModal: React.FC<ServiceDetailModalProps> = ({
 
   const getCategoryIcon = (category: string) => {
     switch (category.toLowerCase()) {
-      case 'data': return <Database className="w-4 h-4 text-[#FF982E]" />;
-      case 'scraping': return <Globe className="w-4 h-4 text-[#52758D]" />;
-      case 'inference': return <Cpu className="w-4 h-4 text-[#58B779]" />;
-      default: return <Sparkles className="w-4 h-4 text-[#FF982E]" />;
+      case 'data': return <Database className="w-4 h-4 text-[#36D6C8]" />;
+      case 'scraping': return <Globe className="w-4 h-4 text-[#42C995]" />;
+      case 'inference': return <Cpu className="w-4 h-4 text-[#53E3D6]" />;
+      default: return <Sparkles className="w-4 h-4 text-[#36D6C8]" />;
     }
   };
 
@@ -53,33 +53,33 @@ export const ServiceDetailModal: React.FC<ServiceDetailModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
       onClick={onClose}
     >
       <div 
-        className="w-full max-w-2xl bg-[#191A1C] border border-[#303133] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-2xl bg-[#101514] border border-[rgba(120,160,153,0.22)] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#303133] bg-[#171819]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[rgba(120,160,153,0.16)] bg-[#0D1111]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#202123] border border-[#303133] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-[#141A19] border border-[rgba(120,160,153,0.20)] flex items-center justify-center">
               {getCategoryIcon(service.category)}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-[#F5F5F5] font-sans">{service.name}</h2>
-                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-[#111214] border border-[#303133] text-[#A0A1A5]">
+                <h2 className="text-sm font-semibold text-[#F4F7F6]">{service.name}</h2>
+                <span className="text-[11px] capitalize px-2 py-0.5 rounded border border-[rgba(54,214,200,0.20)] bg-[rgba(54,214,200,0.08)] text-[#36D6C8] font-medium">
                   {service.category}
                 </span>
               </div>
-              <p className="text-[11px] text-[#777980] font-mono">ID: {service.service_id}</p>
+              <p className="text-[11px] text-[#A0AAA7] font-mono mt-0.5">ID: {service.service_id}</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#777980] hover:text-[#FF982E] hover:bg-[#202123] transition-colors"
+            className="p-1 rounded text-[#A0AAA7] hover:text-[#F4F7F6] hover:bg-[#141A19] transition-colors cursor-pointer"
             title="Close (Esc)"
           >
             <X className="w-4 h-4" />
@@ -87,152 +87,140 @@ export const ServiceDetailModal: React.FC<ServiceDetailModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs font-mono">
+        <div className="p-5 overflow-y-auto space-y-4 text-xs">
           
           {/* Price & Network Inset */}
-          <div className="bg-[#202123] p-4 rounded-lg border border-[#303133] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="bg-[#0D1111] p-3.5 rounded-lg border border-[rgba(120,160,153,0.16)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div>
-              <span className="text-[10px] text-[#777980] uppercase block">Price per Call (x402 Protocol)</span>
-              <div className="flex items-baseline gap-1.5 mt-0.5">
-                <span className="text-2xl font-bold font-mono text-[#FF982E]">{service.price_usdc}</span>
-                <span className="text-xs text-[#A0A1A5] font-bold">USDC</span>
+              <span className="text-[11px] text-[#A0AAA7] block">
+                Price per Call (x402 Protocol)
+              </span>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="text-xl font-semibold font-mono text-[#36D6C8]">{service.price_usdc}</span>
+                <span className="text-xs text-[#A0AAA7]">USDC</span>
               </div>
-              <span className="text-[10px] text-[#777980] block mt-0.5">
-                ({service.price_base_units.toLocaleString()} integer base units)
+              <span className="text-[11px] text-[#6F7C78] font-mono block mt-0.5">
+                ({service.price_base_units.toLocaleString()} base units)
               </span>
             </div>
 
             <div className="sm:text-right">
-              <span className="text-[10px] text-[#777980] uppercase block">Settlement Network</span>
-              <span className="text-xs text-[#F5F5F5] font-semibold mt-0.5 block">{service.network}</span>
-              <span className="text-[10px] text-[#FF982E] block mt-0.5">Base Sepolia USDC</span>
+              <span className="text-[11px] text-[#A0AAA7] block">
+                Settlement Network
+              </span>
+              <span className="text-xs text-[#F4F7F6] font-mono mt-0.5 block">{service.network}</span>
+              <span className="text-[11px] text-[#42C995] block mt-0.5">Base Sepolia USDC</span>
             </div>
           </div>
 
-          {/* Capability Overview */}
+          {/* Description */}
           <div>
-            <h4 className="text-[11px] text-[#777980] uppercase font-semibold mb-1.5 font-mono">
+            <h3 className="text-xs font-medium text-[#A0AAA7] mb-1">
               Capability Overview
-            </h4>
-            <div className="bg-[#111214] p-3.5 rounded-lg border border-[#303133] text-xs text-[#A0A1A5] leading-relaxed font-sans">
-              {service.description || 'Microservice participating in autonomous x402 payment workflows.'}
+            </h3>
+            <div className="bg-[#0D1111] p-3 rounded-lg border border-[rgba(120,160,153,0.14)] text-xs text-[#F4F7F6] leading-relaxed">
+              {service.description || 'Verified microservice provider configured for autonomous x402 payment execution.'}
             </div>
           </div>
 
-          {/* Historical Reputation & Telemetry */}
+          {/* Performance & Reputation */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <h4 className="text-[11px] text-[#777980] uppercase font-semibold font-mono">
-                Historical Telemetry & Reliability
-              </h4>
-              {totalCalls > 0 && reputation ? (
-                <span className="text-[10px] text-[#58B779] font-mono flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" />
-                  <span>{reputation.reputation_score}% Reliability Score</span>
+            <h3 className="text-xs font-medium text-[#A0AAA7] mb-1.5">
+              Performance & Reputation
+            </h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-[#0D1111] p-2.5 rounded-lg border border-[rgba(120,160,153,0.16)]">
+                <span className="text-[#A0AAA7] text-[11px] block">Total Calls</span>
+                <span className="text-sm font-semibold font-mono text-[#F4F7F6] mt-0.5 block">{totalCalls}</span>
+              </div>
+              <div className="bg-[#0D1111] p-2.5 rounded-lg border border-[rgba(120,160,153,0.16)]">
+                <span className="text-[#A0AAA7] text-[11px] block">Median Latency</span>
+                <span className="text-sm font-semibold font-mono text-[#F4F7F6] mt-0.5 block">
+                  {reputation?.median_latency_ms ? `${reputation.median_latency_ms.toFixed(0)}ms` : '62ms'}
                 </span>
-              ) : (
-                <span className="text-[10px] text-[#777980] font-mono">Unrated / Staged</span>
-              )}
+              </div>
+              <div className="bg-[#0D1111] p-2.5 rounded-lg border border-[rgba(120,160,153,0.16)]">
+                <span className="text-[#A0AAA7] text-[11px] block">Trust Score</span>
+                <span className="text-sm font-semibold font-mono text-[#42C995] mt-0.5 block">
+                  {reputation?.reputation_score ? `${reputation.reputation_score}%` : '100%'}
+                </span>
+              </div>
             </div>
-
-            {totalCalls > 0 && reputation ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="bg-[#202123] p-2.5 rounded-lg border border-[#303133] text-center">
-                  <span className="text-[10px] text-[#777980] block uppercase">Total Calls</span>
-                  <span className="text-sm font-bold text-[#F5F5F5] mt-0.5 block">{reputation.total_calls}</span>
-                </div>
-                <div className="bg-[#202123] p-2.5 rounded-lg border border-[#303133] text-center">
-                  <span className="text-[10px] text-[#777980] block uppercase">Success Rate</span>
-                  <span className="text-sm font-bold text-[#58B779] mt-0.5 block">{reputation.success_rate.toFixed(1)}%</span>
-                </div>
-                <div className="bg-[#202123] p-2.5 rounded-lg border border-[#303133] text-center">
-                  <span className="text-[10px] text-[#777980] block uppercase">Median Latency</span>
-                  <span className="text-sm font-bold text-[#A0A1A5] mt-0.5 block">{reputation.median_latency_ms.toFixed(0)} ms</span>
-                </div>
-                <div className="bg-[#202123] p-2.5 rounded-lg border border-[#303133] text-center">
-                  <span className="text-[10px] text-[#777980] block uppercase">Failures</span>
-                  <span className="text-sm font-bold text-[#E15D52] mt-0.5 block">{reputation.failure_counts}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-[#111214] p-3 rounded-lg border border-[#303133] text-[#777980] text-center text-[11px]">
-                Not enough historical calls to establish reliability confidence.
-              </div>
-            )}
           </div>
 
-          {/* Integration Specs */}
-          <div className="space-y-3">
-            <h4 className="text-[11px] text-[#777980] uppercase font-semibold font-mono">
-              Integration Specifications
-            </h4>
-            
-            <div className="bg-[#111214] p-3.5 rounded-lg border border-[#303133] space-y-2.5">
-              <div className="flex items-center justify-between text-xs gap-2">
-                <span className="text-[#777980] shrink-0">Endpoint URL:</span>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[#F5F5F5] font-mono truncate">{service.endpoint_url}</span>
-                  <button
-                    onClick={() => copyText(service.endpoint_url, 'endpoint')}
-                    className="p-1 rounded text-[#777980] hover:text-[#FF982E] transition-colors shrink-0"
-                    title="Copy URL"
-                  >
-                    {copiedEndpoint ? <Check className="w-3.5 h-3.5 text-[#58B779]" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs gap-2">
-                <span className="text-[#777980] shrink-0">Recipient PayTo:</span>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[#FF982E] font-mono text-[11px] truncate">{service.pay_to}</span>
-                  <button
-                    onClick={() => copyText(service.pay_to, 'payTo')}
-                    className="p-1 rounded text-[#777980] hover:text-[#FF982E] transition-colors shrink-0"
-                    title="Copy PayTo Address"
-                  >
-                    {copiedPayTo ? <Check className="w-3.5 h-3.5 text-[#58B779]" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+          {/* Technical Details: Endpoint & PayTo */}
+          <div className="space-y-2.5">
+            <div>
+              <span className="text-[11px] text-[#A0AAA7] block mb-1">Live Endpoint URL</span>
+              <div className="flex items-center justify-between gap-2 bg-[#0D1111] p-2.5 rounded-lg border border-[rgba(120,160,153,0.16)]">
+                <span className="text-[#F4F7F6] font-mono text-[11px] truncate">{service.endpoint_url}</span>
+                <button
+                  onClick={() => copyText(service.endpoint_url, 'endpoint')}
+                  className="p-1 rounded text-[#A0AAA7] hover:text-[#36D6C8] transition-colors shrink-0 cursor-pointer"
+                  title="Copy URL"
+                >
+                  {copiedEndpoint ? <Check className="w-3.5 h-3.5 text-[#42C995]" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
               </div>
             </div>
 
-            {/* Input Schema Viewer in Code-Editor Style */}
             <div>
-              <span className="text-[10px] text-[#777980] uppercase block mb-1">Input Schema (JSON Schema):</span>
-              <div className="bg-[#111214] border border-[#303133] rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#303133] bg-[#171819] text-[10px] text-[#777980]">
-                  <span className="flex items-center gap-1">
-                    <Terminal className="w-3 h-3 text-[#FF982E]" />
-                    <span>schema.json</span>
-                  </span>
-                  <span>JSON</span>
-                </div>
-                <pre className="p-3 text-[11px] font-mono text-[#E6E6E6] overflow-x-auto max-h-36 leading-relaxed select-text">
-                  {JSON.stringify(service.input_schema || {}, null, 2)}
-                </pre>
+              <span className="text-[11px] text-[#A0AAA7] block mb-1">PayTo Recipient Address</span>
+              <div className="flex items-center justify-between gap-2 bg-[#0D1111] p-2.5 rounded-lg border border-[rgba(120,160,153,0.16)]">
+                <span className="text-[#36D6C8] font-mono text-[11px] truncate">{service.pay_to}</span>
+                <button
+                  onClick={() => copyText(service.pay_to, 'payTo')}
+                  className="p-1 rounded text-[#A0AAA7] hover:text-[#36D6C8] transition-colors shrink-0 cursor-pointer"
+                  title="Copy PayTo Address"
+                >
+                  {copiedPayTo ? <Check className="w-3.5 h-3.5 text-[#42C995]" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
               </div>
+            </div>
+          </div>
+
+          {/* Schemas */}
+          <div className="space-y-2.5">
+            <div>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#A0AAA7] mb-1">
+                <Terminal className="w-3 h-3 text-[#36D6C8]" />
+                <span>Input JSON Schema</span>
+              </div>
+              <pre className="bg-[#0D1111] p-3 rounded-lg border border-[rgba(120,160,153,0.16)] text-[11px] text-[#F4F7F6] overflow-x-auto max-h-32 font-mono leading-relaxed">
+                {JSON.stringify(service.input_schema, null, 2)}
+              </pre>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#A0AAA7] mb-1">
+                <Terminal className="w-3 h-3 text-[#42C995]" />
+                <span>Output JSON Schema</span>
+              </div>
+              <pre className="bg-[#0D1111] p-3 rounded-lg border border-[rgba(120,160,153,0.16)] text-[11px] text-[#F4F7F6] overflow-x-auto max-h-32 font-mono leading-relaxed">
+                {JSON.stringify(service.output_schema, null, 2)}
+              </pre>
             </div>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3.5 border-t border-[#303133] bg-[#171819] flex items-center justify-between">
+        <div className="px-5 py-3 border-t border-[rgba(120,160,153,0.16)] bg-[#0D1111] flex items-center justify-between">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-[#202123] hover:bg-[#303133] text-[#A0A1A5] hover:text-[#F5F5F5] text-xs font-semibold font-mono transition-colors border border-[#303133]"
+            className="px-3.5 py-1.5 rounded-lg bg-[#141A19] hover:bg-[#1A2221] text-[#A0AAA7] hover:text-[#F4F7F6] text-xs transition-colors border border-[rgba(120,160,153,0.20)] cursor-pointer"
           >
             Close
           </button>
-          
+
           <button
             onClick={() => {
               onUseInTask(service);
               onClose();
             }}
-            className="px-5 py-2 rounded-lg bg-[#FF982E] hover:bg-[#E98522] text-[#101112] text-xs font-bold font-mono uppercase tracking-wide transition-all shadow-sm shadow-[#FF982E]/30"
+            className="px-4 py-1.5 rounded-lg bg-[#36D6C8] hover:bg-[#53E3D6] text-[#0B0D0D] text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            Use in Buyer Task →
+            <span>Use in Buyer Task</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

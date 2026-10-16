@@ -3,52 +3,97 @@
 @tailwind utilities;
 
 :root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color-scheme: dark;
+  --bg-main: #0B0D0D;
+  --bg-panel: #101313;
+  --bg-card: #121616;
+  --bg-elevated: #161B1A;
+  --bg-input: #0D1010;
+  --border-subtle: rgba(120, 160, 153, 0.16);
+  --border-strong: rgba(120, 160, 153, 0.30);
+  --text-primary: #F4F7F6;
+  --text-secondary: #9BA5A2;
+  --text-muted: #6B7673;
+  --accent-teal: #36D6C8;
+  --accent-teal-hover: #45DFD2;
+  --accent-emerald: #42C995;
 }
 
 body {
   margin: 0;
-  background-color: #101112;
-  color: #F5F5F5;
+  background-color: #0B0D0D;
+  color: #F4F7F6;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.015em;
 }
 
 code, pre, .font-mono {
   font-family: 'JetBrains Mono', monospace;
+  letter-spacing: -0.01em;
 }
 
-/* Custom dark charcoal theme scrollbar */
+/* Minimal Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #101112;
+  background: #0B0D0D;
 }
 ::-webkit-scrollbar-thumb {
-  background: #303133;
-  border-radius: 3px;
+  background: rgba(120, 160, 153, 0.20);
+  border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #FF982E;
+  background: #36D6C8;
 }
 
-.panel-bg {
-  background-color: #171819;
-  border: 1px solid #303133;
+/* Clean, Understated Surfaces */
+.wallet-card {
+  background: #111515;
+  border: 1px solid rgba(120, 160, 153, 0.16);
 }
 
-.panel-secondary {
-  background-color: #1D1E20;
-  border: 1px solid #303133;
+.wallet-card-elevated {
+  background: #151A1A;
+  border: 1px solid rgba(120, 160, 153, 0.22);
 }
 
-.orange-glow {
-  box-shadow: 0 0 20px rgba(255, 152, 46, 0.25);
+.wallet-border-glow:hover {
+  border-color: rgba(54, 214, 200, 0.40);
 }
 
-.orange-border-glow:hover {
-  border-color: #FF982E;
-  box-shadow: 0 0 15px rgba(255, 152, 46, 0.2);
+/* Primary Teal Action Button - Clean & Professional */
+.teal-button {
+  background-color: #36D6C8;
+  color: #0B0D0D;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  transition: background-color 0.15s ease;
+}
+
+.teal-button:hover {
+  background-color: #45DFD2;
+}
+
+.teal-ghost-button {
+  background: transparent;
+  color: #F4F7F6;
+  border: 1px solid rgba(120, 160, 153, 0.25);
+  transition: all 0.15s ease;
+}
+
+.teal-ghost-button:hover {
+  border-color: #36D6C8;
+  color: #36D6C8;
+  background: rgba(54, 214, 200, 0.05);
 }

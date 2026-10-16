@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import { Info } from 'lucide-react';
 
 interface PaymentsRaceProps {
   humanTxCount?: number;
@@ -20,16 +19,15 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
 
     let animationFrameId: number;
     let width = (canvas.width = canvas.parentElement?.clientWidth || 700);
-    let height = (canvas.height = 360);
+    let height = (canvas.height = 240);
 
     const handleResize = () => {
       if (!canvas || !canvas.parentElement) return;
       width = canvas.width = canvas.parentElement.clientWidth;
-      height = canvas.height = 360;
+      height = canvas.height = 240;
     };
     window.addEventListener('resize', handleResize);
 
-    // Generate glowing orange particles for human payments and blue-gray for agents
     const particles: Array<{
       x: number;
       y: number;
@@ -38,30 +36,28 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
       radius: number;
       alpha: number;
       color: string;
-      glowColor: string;
     }> = [];
 
-    const totalParticles = 140;
+    const totalParticles = 70;
     for (let i = 0; i < totalParticles; i++) {
-      const isAgent = i < 35; // Lower zone for AI Agent payments
+      const isAgent = i < 35;
       particles.push({
         x: Math.random() * width,
-        y: isAgent ? (height * 0.65) + (Math.random() * (height * 0.3)) : Math.random() * (height * 0.6),
+        y: isAgent ? (height * 0.55) + (Math.random() * (height * 0.40)) : Math.random() * (height * 0.50),
         vx: (Math.random() - 0.5) * 0.35,
         vy: (Math.random() - 0.5) * 0.35,
-        radius: isAgent ? Math.random() * 2 + 1.5 : Math.random() * 3 + 1.2,
-        alpha: Math.random() * 0.7 + 0.3,
-        color: isAgent ? '#52758D' : '#FF982E',
-        glowColor: isAgent ? 'rgba(82, 117, 141, 0.4)' : 'rgba(255, 152, 46, 0.45)',
+        radius: isAgent ? Math.random() * 1.8 + 1 : Math.random() * 2 + 1,
+        alpha: Math.random() * 0.5 + 0.3,
+        color: isAgent ? '#36D6C8' : '#42C995',
       });
     }
 
     const render = () => {
-      ctx.fillStyle = '#171819';
+      ctx.fillStyle = '#0F1313';
       ctx.fillRect(0, 0, width, height);
 
-      // Subtle grid dots or lines
-      ctx.strokeStyle = '#222426';
+      // Subtle grid
+      ctx.strokeStyle = 'rgba(120, 160, 153, 0.07)';
       ctx.lineWidth = 1;
       for (let x = 0; x < width; x += 40) {
         ctx.beginPath();
@@ -76,17 +72,14 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
         ctx.stroke();
       }
 
-      // Dashed horizontal boundary separating human from AI agent payments
-      ctx.save();
-      ctx.strokeStyle = '#303133';
-      ctx.setLineDash([4, 6]);
+      // Divider line
+      ctx.strokeStyle = 'rgba(120, 160, 153, 0.16)';
       ctx.beginPath();
-      ctx.moveTo(0, height * 0.62);
-      ctx.lineTo(width, height * 0.62);
+      ctx.moveTo(0, height * 0.52);
+      ctx.lineTo(width, height * 0.52);
       ctx.stroke();
-      ctx.restore();
 
-      // Render glowing particles
+      // Render particles
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
         p.x += p.vx;
@@ -97,14 +90,12 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
         if (p.y < 0) p.y = height;
         if (p.y > height) p.y = 0;
 
-        ctx.save();
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fillStyle = p.color;
-        ctx.shadowColor = p.glowColor;
-        ctx.shadowBlur = 10;
+        ctx.globalAlpha = p.alpha;
         ctx.fill();
-        ctx.restore();
+        ctx.globalAlpha = 1.0;
       }
 
       animationFrameId = requestAnimationFrame(render);
@@ -116,41 +107,42 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [humanTxCount, agentTxCount]);
 
   return (
-    <div className="bg-[#171819] border border-[#303133] rounded-lg overflow-hidden flex flex-col justify-between">
-      {/* Header Bar */}
-      <div className="p-3.5 border-b border-[#303133] flex items-center justify-between">
+    <div className="wallet-card rounded-lg overflow-hidden border border-[rgba(120,160,153,0.18)]">
+      {/* Header */}
+      <div className="px-4 py-2.5 border-b border-[rgba(120,160,153,0.16)] flex items-center justify-between bg-[#0E1212] text-xs font-sans">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-sm text-[#F5F5F5] font-sans">Payments Race</span>
-          <Info className="w-3.5 h-3.5 text-[#96989D] cursor-pointer" />
+          <span className="font-medium text-[#F4F7F6]">Payment Flow Visualizer</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161B1A] text-[#9BA5A2] border border-[rgba(120,160,153,0.2)]">
+            Telemetry
+          </span>
         </div>
 
-        {/* Legend */}
         <div className="flex items-center gap-4 text-xs font-mono">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF982E] shadow-sm shadow-[#FF982E]/50" />
-            <span className="text-[#F5F5F5] font-medium">Human Payments</span>
-            <span className="text-[#96989D] text-[11px]">({humanTxCount})</span>
+            <span className="w-2 h-2 rounded-full bg-[#42C995]" />
+            <span className="text-[#9BA5A2]">Human:</span>
+            <span className="text-[#F4F7F6]">{humanTxCount}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#52758D]" />
-            <span className="text-[#F5F5F5] font-medium">AI Agent Payments</span>
-            <span className="text-[#96989D] text-[11px]">({agentTxCount})</span>
+            <span className="w-2 h-2 rounded-full bg-[#36D6C8]" />
+            <span className="text-[#9BA5A2]">Agent:</span>
+            <span className="text-[#36D6C8] font-medium">{agentTxCount}</span>
           </div>
         </div>
       </div>
 
-      {/* Canvas Area */}
-      <div className="relative w-full h-[360px] bg-[#171819]">
+      {/* Canvas */}
+      <div className="relative w-full h-[240px] bg-[#0F1313]">
         <canvas ref={canvasRef} className="w-full h-full block" />
-        <div className="absolute left-3 top-3 px-2 py-0.5 rounded bg-[#101112]/80 border border-[#303133] text-[10px] font-mono text-[#96989D]">
-          LIVE STREAM: EIP-712 AUTH & MICROPAYMENTS
+        <div className="absolute left-3 top-2.5 text-[11px] font-sans text-[#6B7673]">
+          Manual Human Flow
         </div>
-        <div className="absolute right-3 bottom-3 px-2 py-0.5 rounded bg-[#101112]/80 border border-[#303133] text-[10px] font-mono text-[#FF982E]">
-          NETWORK: BASE SEPOLIA
+        <div className="absolute left-3 bottom-2.5 text-[11px] font-sans text-[#36D6C8]">
+          Autonomous x402 Flow
         </div>
       </div>
     </div>
