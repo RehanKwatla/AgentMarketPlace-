@@ -1,4 +1,4 @@
-"""Buyer Orchestration Service managing task lifecycle, concurrency, and persistence."""
+"""Buyer Orchestration Service managing task lifecycle, concurrency, Member 1 payments, and Member 4 persistence."""
 import asyncio
 import json
 import time
@@ -13,6 +13,7 @@ from backend.shared.constants import (
     HEADER_X402_SETTLEMENT_PROOF,
     NETWORK_BASE_SEPOLIA,
     USDC_BASE_SEPOLIA,
+    LedgerStatus,
     ServiceCategory,
     base_units_to_usdc,
     usdc_to_base_units,
@@ -20,10 +21,13 @@ from backend.shared.constants import (
 from backend.shared.schemas import PaymentRequirement
 from backend.payments.budget import BudgetManager
 from backend.payments.policy import PaymentPolicyVerifier
+from backend.payments.settlement import SettlementVerifier
+from backend.payments.interfaces import BuyerPaymentClientInterface
 from backend.registry.service import RegistryService, registry_service
 from backend.buyer.aggregator import ResultAggregator
 from backend.buyer.explanation import ExplanationGenerator
 from backend.buyer.output_validator import OutputValidator
+from backend.buyer.payment_client import BuyerPaymentClient
 from backend.buyer.plan_validator import ExecutionPlan, PlannedCall
 from backend.buyer.planner import TaskPlanner
 from backend.buyer.repository import task_repository, TaskRepository
@@ -38,20 +42,28 @@ from backend.buyer.schemas import (
 
 
 class BuyerService:
-    """Manages the full buyer task lifecycle from acceptance to execution and explanation."""
+    """Manages the full buyer task lifecycle from acceptance to execution, Member 1 payment, and Member 4 ledger."""
 
     def __init__(
         self,
         registry: RegistryService = registry_service,
         repository: TaskRepository = task_repository,
+        payment_client: Optional[BuyerPaymentClientInterface] = None,
+        policy_verifier: Optional[PaymentPolicyVerifier] = None,
+        settlement_verifier: Optional[SettlementVerifier] = None,
     ):
         self.registry = registry
         self.repository = repository
+        self.policy_verifier = policy_verifier or PaymentPolicyVerifier()
+        self.settlement_verifier = settlement_verifier or SettlementVerifier(rpc_url="")
+        self.payment_client = payment_client or BuyerPaymentClient(
+            policy_verifier=self.policy_verifier,
+            settlement_verifier=self.settlement_verifier,
+        )
         self.planner = TaskPlanner()
         self.output_validator = OutputValidator()
         self.aggregator = ResultAggregator()
         self.explanation_gen = ExplanationGenerator()
-        self.policy_verifier = PaymentPolicyVerifier()
 
         # In-memory storage indexed by task_id
         self._tasks: Dict[str, TaskDetailResponse] = {}
@@ -100,21 +112,29 @@ class BuyerService:
         if not task:
             return None
 
+        # Build provenance list from individual call records
         provenance = []
-        if task.result and isinstance(task.result, dict):
-            provenance = task.result.get("provenance", [])
-
-        cost_explanation = task.cost_explanation or (task.explanation.task_interpretation if task.explanation else "")
-        explanation_dict = task.explanation.model_dump() if task.explanation else None
+        for call in task.calls:
+            provenance.append({
+                "call_id": call.call_id,
+                "service_id": call.service_id,
+                "category": call.category.value if hasattr(call.category, "value") else str(call.category),
+                "status": call.status.value if hasattr(call.status, "value") else str(call.status),
+                "listed_price_usdc": call.listed_price_usdc,
+                "amount_paid_usdc": call.amount_paid_usdc,
+                "latency_ms": call.latency_ms,
+                "tx_hash": call.transaction_hash,
+                "validation_status": call.validation_status
+            })
 
         return TaskResultResponse(
             task_id=task.task_id,
             status=task.status,
             result=task.result,
-            final_result=task.final_result or (task.result.get("summary") if task.result else None),
+            final_result=task.final_result,
             provenance=provenance,
-            cost_explanation=cost_explanation,
-            explanation=explanation_dict,
+            cost_explanation=task.cost_explanation,
+            explanation=task.explanation.model_dump() if task.explanation else None,
             spent_usdc=task.spent_usdc,
             remaining_usdc=task.remaining_usdc,
             calls=task.calls
@@ -183,7 +203,7 @@ class BuyerService:
             self._task_plans[task_id] = plan
             task_record.plan_summary = plan.to_dict()
         except Exception as e:
-            # Plan rejected before execution (e.g. over budget or invalid service)
+            # Plan rejected before execution (e.g. over budget, cycle, or invalid service)
             task_record.status = TaskStatus.REFUSED.value
             task_record.failure_reason = str(e)
             task_record.result = {"error": str(e)}
@@ -204,15 +224,11 @@ class BuyerService:
         self.repository.update_task_status(task_id, status=TaskStatus.RUNNING.value)
 
         # 2. Multi-call execution with Concurrency Semaphore (>= 3)
-        concurrency = max(1, min(request.max_concurrency, 10))
+        concurrency = max(3, min(request.max_concurrency, 10))
         semaphore = asyncio.Semaphore(concurrency)
         completed_calls: Dict[int, ServiceCallRecord] = {}
         fallbacks: List[str] = []
         warnings: List[str] = []
-
-        # Execute parallel steps first (dependencies == empty), then dependent steps
-        independent_steps = [c for c in plan.calls if not c.depends_on]
-        dependent_steps = [c for c in plan.calls if c.depends_on]
 
         async def worker(call_plan: PlannedCall):
             async with semaphore:
@@ -226,13 +242,14 @@ class BuyerService:
                 )
                 completed_calls[call_plan.step_id] = record
 
-        # Run independent calls concurrently
-        if independent_steps:
-            await asyncio.gather(*(worker(c) for c in independent_steps))
+        # Execute DAG stage by stage ensuring parallel execution where dependencies permit
+        calls_by_id = {c.step_id: c for c in plan.calls}
+        stages = plan.execution_stages or [[c.step_id for c in plan.calls]]
 
-        # Run dependent calls sequentially or as dependencies resolve
-        for dep_step in dependent_steps:
-            await worker(dep_step)
+        for stage in stages:
+            stage_calls = [calls_by_id[sid] for sid in stage if sid in calls_by_id]
+            if stage_calls:
+                await asyncio.gather(*(worker(c) for c in stage_calls))
 
         # 3. Output Validation, Aggregation, and Explanation
         all_calls = list(completed_calls.values())
@@ -257,13 +274,19 @@ class BuyerService:
         )
 
         # Check overall final status
+        has_pending_recon = any(c.status == CallStatus.PENDING_RECONCILIATION for c in all_calls)
         has_rejected = any(c.status == CallStatus.PAID_OUTPUT_REJECTED for c in all_calls)
         has_succeeded = any(c.status == CallStatus.SUCCEEDED for c in all_calls)
+        has_refused = any(c.status == CallStatus.REFUSED for c in all_calls)
 
-        if has_rejected and has_succeeded:
+        if has_pending_recon:
+            task_status = TaskStatus.PENDING_RECONCILIATION.value
+        elif has_rejected and has_succeeded:
             task_status = TaskStatus.COMPLETED_WITH_WARNINGS.value
         elif has_succeeded:
             task_status = TaskStatus.COMPLETED.value
+        elif has_refused:
+            task_status = TaskStatus.REFUSED.value
         else:
             task_status = TaskStatus.FAILED.value
 
@@ -305,32 +328,54 @@ class BuyerService:
         fallbacks: List[str],
         warnings: List[str]
     ) -> ServiceCallRecord:
-        """Execute a single paid service call with budget reservation, x402 negotiation, and output validation."""
+        """Execute a single paid service call with Member 1 payment engine and Member 4 persistence."""
         service = self.registry.get_service(planned.service_id)
-        call_id = str(uuid.uuid4())
-        res_id = f"res_{call_id[:8]}"
+        # Deterministic stable call ID and idempotency key
+        call_id = f"call_{task_id[:8]}_step{planned.step_id}_{planned.service_id}"
+        idempotency_key = f"idem_{task_id}_{planned.step_id}_{planned.service_id}"
+        res_id = f"res_{task_id[:8]}_{planned.step_id}"
 
         if not service:
+            err = f"Service '{planned.service_id}' not found in registry."
+            self.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=call_id,
+                service_id=planned.service_id,
+                listed_price=base_units_to_usdc(planned.estimated_price_units),
+                amount_paid="0.000000",
+                status=LedgerStatus.REFUSED.value,
+                error_reason=err
+            )
             return ServiceCallRecord(
                 call_id=call_id,
                 service_id=planned.service_id,
                 category=ServiceCategory(planned.category),
                 status=CallStatus.REFUSED,
                 listed_price_usdc=base_units_to_usdc(planned.estimated_price_units),
-                error=f"Service '{planned.service_id}' not found in registry."
+                error=err
             )
 
-        # 1. Two-phase budget reservation lock
+        # 1. Two-phase atomic budget reservation using Member 1 BudgetManager
         try:
             await budget_mgr.reserve(res_id, service.price_atomic)
         except Exception as e:
+            err = f"Budget reservation failed: {str(e)}"
+            self.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=call_id,
+                service_id=service.service_id,
+                listed_price=service.price_usdc,
+                amount_paid="0.000000",
+                status=LedgerStatus.REFUSED.value,
+                error_reason=err
+            )
             return ServiceCallRecord(
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
                 status=CallStatus.REFUSED,
                 listed_price_usdc=service.price_usdc,
-                error=f"Budget reservation failed: {str(e)}"
+                error=err
             )
 
         # 2. Prepare payload incorporating upstream outputs if dependent
@@ -349,11 +394,13 @@ class BuyerService:
 
         # 3. Execute HTTP Call against Seller with x402 lifecycle
         start_time = time.perf_counter()
-        idempotency_key = str(uuid.uuid4())
         raw_output = None
         tx_hash = None
         error_msg = None
         paid = False
+        payment_dispatched = False
+        uncertain_payment = False
+        policy_violation = False
 
         transport = None
         if "localhost" in service.endpoint_url or "127.0.0.1" in service.endpoint_url:
@@ -379,25 +426,23 @@ class BuyerService:
 
                     req_data = json.loads(req_header)
 
-                    # Step B: Policy verification (price gouging, network, token, recipient)
+                    # Step B: Policy verification via Member 1 PolicyVerifier
                     req_obj = PaymentRequirement(**req_data)
-                    self.policy_verifier.verify(
-                        requirement=req_obj,
-                        registered_service=service
-                    )
+                    try:
+                        self.policy_verifier.verify(
+                            requirement=req_obj,
+                            registered_service=service
+                        )
+                    except Exception as pe:
+                        policy_violation = True
+                        raise pe
 
-                    # Step C: Prepare signed authorization payload via Member 1 integration
-                    payment_payload = {
-                        "authorization": {
-                            "network": NETWORK_BASE_SEPOLIA,
-                            "token": USDC_BASE_SEPOLIA,
-                            "amount": str(service.price_atomic),
-                            "payTo": service.pay_to,
-                            "nonce": req_data.get("nonce", "nonce_default")
-                        },
-                        "signature": "0x402_authorized_settlement_signature",
-                        "buyer_address": "0x1000000000000000000000000000000000000001"
-                    }
+                    # Step C: Prepare signed authorization payload via Member 1 PaymentClient
+                    payment_payload = await self.payment_client.create_payment_payload(
+                        requirement=req_obj,
+                        idempotency_key=idempotency_key
+                    )
+                    payment_dispatched = True
 
                     # Step D: Re-request with payment header
                     resp_paid = await client.post(
@@ -405,28 +450,51 @@ class BuyerService:
                         json=payload,
                         headers={
                             HEADER_IDEMPOTENCY_KEY: idempotency_key,
-                            HEADER_X402_PAYMENT_PAYLOAD: json.dumps(payment_payload)
+                            HEADER_X402_PAYMENT_PAYLOAD: json.dumps(payment_payload.model_dump())
                         }
                     )
 
                     if resp_paid.status_code == 200:
-                        paid = True
-                        raw_output = resp_paid.json()
-                        tx_hash = resp_paid.headers.get(HEADER_X402_SETTLEMENT_PROOF)
+                        proof_header = resp_paid.headers.get(HEADER_X402_SETTLEMENT_PROOF)
+                        # Step E: Verify settlement proof via Member 1 SettlementVerifier
+                        receipt = await self.payment_client.verify_settlement(proof_header)
+                        if receipt and (receipt.tx_hash or receipt.facilitator_receipt_id):
+                            paid = True
+                            raw_output = resp_paid.json()
+                            tx_hash = receipt.tx_hash or receipt.facilitator_receipt_id
+                        else:
+                            # HTTP 200 returned but settlement proof is missing or unverified -> UNCERTAIN SETTLEMENT
+                            uncertain_payment = True
+                            raw_output = resp_paid.json()
+                            error_msg = "Seller returned HTTP 200 but settlement proof is missing or unverified."
+                    elif resp_paid.status_code in [502, 503, 504]:
+                        uncertain_payment = True
+                        error_msg = f"Gateway error HTTP {resp_paid.status_code} after payment dispatched: {resp_paid.text}"
                     else:
                         error_msg = f"Seller HTTP {resp_paid.status_code}: {resp_paid.text}"
+
                 elif resp_402.status_code == 200:
                     paid = False
                     raw_output = resp_402.json()
                 else:
                     error_msg = f"Unexpected status {resp_402.status_code}: {resp_402.text}"
 
+        except httpx.TimeoutException as te:
+            if payment_dispatched:
+                uncertain_payment = True
+                error_msg = f"Network timeout after payment dispatched: {str(te)}"
+            else:
+                error_msg = f"Network timeout before payment challenge: {str(te)}"
         except Exception as e:
-            error_msg = f"HTTP call failed: {str(e)}"
+            if payment_dispatched and not paid:
+                uncertain_payment = True
+                error_msg = f"Exception after payment dispatched: {str(e)}"
+            else:
+                error_msg = f"HTTP call failed: {str(e)}"
 
         latency = (time.perf_counter() - start_time) * 1000.0
 
-        # 4. Settle Budget & Validate Output
+        # 4. Settle Budget & Output Validation
         if paid:
             await budget_mgr.commit(res_id, service.price_atomic)
             amount_paid = service.price_usdc
@@ -435,7 +503,7 @@ class BuyerService:
             is_valid, val_err = self.output_validator.validate_output(raw_output, service.output_schema)
             if not is_valid:
                 warnings.append(f"Seller {service.service_id} output validation failed: {val_err}")
-                return ServiceCallRecord(
+                record = ServiceCallRecord(
                     call_id=call_id,
                     service_id=service.service_id,
                     category=service.category,
@@ -448,8 +516,20 @@ class BuyerService:
                     error=f"Output validation rejected: {val_err}",
                     validation_status="rejected"
                 )
+                self.repository.record_call_to_ledger(
+                    task_id=task_id,
+                    request_id=call_id,
+                    service_id=service.service_id,
+                    listed_price=service.price_usdc,
+                    amount_paid=amount_paid,
+                    status=LedgerStatus.PAID_OUTPUT_REJECTED.value,
+                    tx_hash=tx_hash,
+                    latency_ms=round(latency, 2),
+                    error_reason=record.error
+                )
+                return record
 
-            return ServiceCallRecord(
+            record = ServiceCallRecord(
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
@@ -461,20 +541,70 @@ class BuyerService:
                 output=raw_output,
                 validation_status="accepted"
             )
-        else:
-            await budget_mgr.release(res_id)
-            fallbacks.append(f"Call to {service.service_id} failed: {error_msg}")
-            return ServiceCallRecord(
+            self.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=call_id,
+                service_id=service.service_id,
+                listed_price=service.price_usdc,
+                amount_paid=amount_paid,
+                status=LedgerStatus.PAID.value,
+                tx_hash=tx_hash,
+                latency_ms=round(latency, 2)
+            )
+            return record
+
+        elif uncertain_payment:
+            # UNCERTAIN PAYMENT: Do NOT release reservation! Do NOT retry blindly!
+            warnings.append(f"Call to {service.service_id} has uncertain settlement: {error_msg}. Awaiting reconciliation.")
+            record = ServiceCallRecord(
                 call_id=call_id,
                 service_id=service.service_id,
                 category=service.category,
-                status=CallStatus.FAILED_AND_NOT_CHARGED,
+                status=CallStatus.PENDING_RECONCILIATION,
+                listed_price_usdc=service.price_usdc,
+                amount_paid_usdc="0.000000",
+                latency_ms=round(latency, 2),
+                error=f"Uncertain payment settlement: {error_msg}",
+                validation_status="pending_reconciliation"
+            )
+            self.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=call_id,
+                service_id=service.service_id,
+                listed_price=service.price_usdc,
+                amount_paid="0.000000",
+                status="pending reconciliation",
+                error_reason=f"UNCERTAIN_SETTLEMENT: {error_msg}"
+            )
+            return record
+
+        else:
+            await budget_mgr.release(res_id)
+            fallbacks.append(f"Call to {service.service_id} failed: {error_msg}")
+            assigned_status = CallStatus.REFUSED if policy_violation else CallStatus.FAILED_AND_NOT_CHARGED
+            assigned_ledger_status = LedgerStatus.REFUSED if policy_violation else LedgerStatus.FAILED_AND_NOT_CHARGED
+            record = ServiceCallRecord(
+                call_id=call_id,
+                service_id=service.service_id,
+                category=service.category,
+                status=assigned_status,
                 listed_price_usdc=service.price_usdc,
                 amount_paid_usdc="0.000000",
                 latency_ms=round(latency, 2),
                 error=error_msg,
                 validation_status="not_applicable"
             )
+            self.repository.record_call_to_ledger(
+                task_id=task_id,
+                request_id=call_id,
+                service_id=service.service_id,
+                listed_price=service.price_usdc,
+                amount_paid="0.000000",
+                status=assigned_ledger_status.value,
+                latency_ms=round(latency, 2),
+                error_reason=error_msg
+            )
+            return record
 
 
 # Global singleton instance

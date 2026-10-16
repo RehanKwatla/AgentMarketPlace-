@@ -130,4 +130,27 @@
 - Added comprehensive unit and integration tests in `backend/tests/test_planner_validator.py` (11 tests).
 - Ran entire test suite across all subsystems: **64 of 64 tests passed (100% pass rate in 2.14s)**.
 
+### Step 11: Buyer Orchestration Integration with Member 1 Payments & Member 4 Persistence
+- Inspected Member 1 payment interfaces (`BuyerPaymentClientInterface`, `PaymentPolicyVerifier`, `BudgetManager`, `SettlementVerifier`) and Member 4 persistence models (`ledger_repo`, `LedgerRecordSchema`, `LedgerRecordModel`, `TaskRecordModel`).
+- Created `backend/buyer/payment_client.py` implementing `BuyerPaymentClient(BuyerPaymentClientInterface)` to handle EIP-712/x402 payment authorization generation and settlement proof verification via Member 1's facilitator/RPC.
+- Extended `backend/buyer/repository.py` with `record_call_to_ledger()` to sync calls directly to Member 4's `ledger_repo` and SQL `LedgerRecordModel`.
+- Enhanced `backend/buyer/service.py`:
+  - Routed every paid seller invocation through injected `BuyerPaymentClientInterface`.
+  - Enforced no transaction signing or direct payments in buyer service; strictly delegated to payment client.
+  - Generated stable call IDs (`call_{task_id[:8]}_step{step_id}_{service_id}`) and idempotency keys (`idem_{task_id}_{step_id}_{service_id}`).
+  - Enforced atomic budget reservation (`BudgetManager.reserve_budget`) before dispatching requests.
+  - Executed DAG stages with `asyncio.gather` bounded by `asyncio.Semaphore(3)`.
+  - Handled uncertain payment outcomes (post-dispatch network timeouts, missing settlement proofs, 502/503/504) by transitioning status to `CallStatus.PENDING_RECONCILIATION` and holding reserved budget without blind retries.
+  - Marked calls `PAID` only upon verified settlement evidence.
+  - Persisted all status transitions (`paid`, `paid output rejected`, `refused`, `failed and not charged`, `pending reconciliation`) to Member 4's ledger.
+- Created `backend/tests/test_buyer_orchestration_payment.py` containing 6 integration tests:
+  1. `test_every_paid_call_routes_through_member1_payment_client` [PASSED]
+  2. `test_concurrent_calls_respect_budget_without_overdraw` [PASSED]
+  3. `test_uncertain_settlement_on_missing_proof_transitions_to_pending_reconciliation` [PASSED]
+  4. `test_timeout_after_payment_dispatched_transitions_to_pending_reconciliation` [PASSED]
+  5. `test_member4_ledger_persistence_records_all_calls` [PASSED]
+  6. `test_call_flow_trace_planning_and_validation_precede_payment` [PASSED]
+- Ran full test suite via `python scripts/run_tests.py`: **70 of 70 tests passed (100% pass rate in 1.09s)**.
+
+
 

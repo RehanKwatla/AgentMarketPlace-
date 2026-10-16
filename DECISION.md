@@ -188,4 +188,32 @@ In agentic commerce systems, planning without validation leads to hallucinated e
 - `TaskPlanner.create_plan()` generates an `ExecutionPlan` with dependency graph, topological stages, expected and worst-case cost, fallback allowances, and selection reasons.
 - `PlanValidator.validate_plan()` rigorously checks DAG acyclicity, schema compliance via `Draft7Validator`, authoritative server-side registry resolution, and concurrency limits.
 
+---
+
+## Decision 11: End-to-End Orchestration Integration with Member 1 Payments & Member 4 Persistence
+
+### 1. Context & Problem
+The Buyer agent cannot operate in a silo. Every paid invocation must interface with Member 1's payment engine (`BuyerPaymentClientInterface`, `PaymentPolicyVerifier`, `BudgetManager`, `SettlementVerifier`) and record immutable transaction history in Member 4's ledger repository (`ledger_repo` and SQLAlchemy `LedgerRecordModel`). Crucially:
+1. The buyer module must never sign transactions directly or implement competing replay protection.
+2. Concurrent eligible calls ($\ge 3$) must be supported without exceeding budget.
+3. Network timeouts or missing settlement proofs after dispatching payment payloads introduce settlement uncertainty; blind retries could result in double-spending.
+
+### 2. Theory & Logic
+- **Delegated Cryptographic Authorization:** The buyer layer (`BuyerService`) never handles private keys or signs transactions directly. Instead, it delegates payload creation to `BuyerPaymentClientInterface.create_payment_payload` and settlement verification to `BuyerPaymentClientInterface.verify_settlement`.
+- **Atomic Concurrency Bounding:** `BudgetManager.reserve_budget` locks funds under an `asyncio.Lock` prior to challenge negotiation. Concurrent stage calls are bounded by an `asyncio.Semaphore(3)` and grouped topologically so that independent calls run simultaneously without race conditions.
+- **Strict Settlement Evidence Gates:** Calls are marked `PAID` *only* if the seller returns verified settlement evidence (facilitator receipt or on-chain tx hash). If the seller returns HTTP 200 without valid settlement evidence, or if the network times out *after* payment authorization was dispatched, the call immediately transitions to `PENDING_RECONCILIATION`. The reserved budget is retained (never refunded or double-spent) until an explicit reconciliation process resolves the on-chain status.
+- **Member 4 Persistence Synchronization:** Every call status transition (`paid`, `paid output rejected`, `refused`, `failed and not charged`, `pending reconciliation`) is recorded to Member 4's `ledger_repo` with deterministic call IDs (`call_{task_id[:8]}_step{step_id}_{service_id}`) and idempotency keys (`idem_{task_id}_{step_id}_{service_id}`).
+
+### 3. How It Works
+- `BuyerPaymentClient` implements `BuyerPaymentClientInterface` by integrating with `PaymentPolicyVerifier`, `SettlementVerifier`, and `web3`.
+- `BuyerService._execute_call()` coordinates the sequence:
+  1. Reserve budget atomically via `BudgetManager`.
+  2. Send initial HTTP request to seller endpoint; receive 402 challenge.
+  3. Validate challenge against `PaymentPolicyVerifier`.
+  4. Obtain signed payload from `BuyerPaymentClient`.
+  5. Dispatch payload in `X-402-Payment-Payload` header.
+  6. Catch post-dispatch timeouts and missing settlement proofs -> `PENDING_RECONCILIATION`.
+  7. On verified settlement proof -> `PAID`, validate output schema; commit budget.
+  8. Synchronously record call in `TaskRecordModel` and Member 4's `ledger_repo`.
+
 
