@@ -1,8 +1,26 @@
 """Pytest Configuration and Shared Fixtures."""
+import os
+import tempfile
+from pathlib import Path
+
+# The autouse ledger fixture clears its database between tests. Never let the
+# suite point that fixture at a developer's configured local_data/ledger.db.
+_TEST_DATABASE_DIRECTORY = tempfile.TemporaryDirectory(prefix="di06-pytest-")
+os.environ["DATABASE_URL"] = f"sqlite:///{Path(_TEST_DATABASE_DIRECTORY.name).as_posix()}/ledger.db"
+
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend.shared.config import Settings, get_settings
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Close pooled SQLite handles before deleting this test's temporary database."""
+    try:
+        from backend.database.session import engine
+        engine.dispose()
+    finally:
+        _TEST_DATABASE_DIRECTORY.cleanup()
 
 
 @pytest.fixture(scope="session")
