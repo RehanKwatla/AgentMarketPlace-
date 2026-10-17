@@ -74,6 +74,13 @@ class ConfiguredInferenceProvider(InferenceProviderInterface):
             "User-Agent": "AgenticaInference/2.0 (Gemini)",
         }
 
+        generation_config: Dict[str, Any] = {
+            "maxOutputTokens": min(max_tokens, self.settings.inference_max_tokens),
+            "temperature": max(0.0, min(1.0, temperature)),
+        }
+        if "flash" in model.lower():
+            generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+
         body = {
             "contents": [
                 {
@@ -81,10 +88,7 @@ class ConfiguredInferenceProvider(InferenceProviderInterface):
                     "parts": [{"text": prompt}],
                 }
             ],
-            "generationConfig": {
-                "maxOutputTokens": min(max_tokens, self.settings.inference_max_tokens),
-                "temperature": max(0.0, min(1.0, temperature)),
-            },
+            "generationConfig": generation_config,
         }
 
         timeout = httpx.Timeout(self.settings.inference_timeout_seconds, connect=5.0)
