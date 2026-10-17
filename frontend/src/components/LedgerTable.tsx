@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { LedgerRecord } from '../types';
-import { StatusBadge } from './ReputationBadge';
-import { ExternalLink, Filter } from 'lucide-react';
+import { StatusBadge } from './ui/StatusBadge';
+import { ExternalLink, Copy, Check, Clock, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { mapPaymentStatus } from '../utils/statusMapping';
 
 interface LedgerTableProps {
   records: LedgerRecord[];
@@ -14,167 +15,209 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   onSelectRecord,
   selectedRequestId 
 }) => {
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterService, setFilterService] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const uniqueServices = Array.from(new Set(records.map(r => r.service_id)));
+  const copyToClipboard = (text: string, key: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
-  const filteredRecords = records.filter(r => {
-    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-    if (filterService !== 'all' && r.service_id !== filterService) return false;
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      return (
-        r.request_id.toLowerCase().includes(q) ||
-        r.service_id.toLowerCase().includes(q) ||
-        (r.tx_hash && r.tx_hash.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
-
-  const getExplorerUrl = (txHash: string | null) => {
-    if (!txHash) return null;
+  const getExplorerUrl = (txHash: string | null | undefined) => {
+    if (!txHash || !txHash.startsWith('0x') || txHash.length < 42) return null;
     return `https://sepolia.basescan.org/tx/${txHash}`;
   };
 
   return (
-    <div className="space-y-3">
-      {/* Filtering Toolbar */}
-      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between wallet-card p-2.5 rounded-lg text-xs font-sans">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-[#A3A3A3]">
-            <Filter className="w-3.5 h-3.5 text-[#FFFFFF]" />
-            <span>Filter:</span>
-          </div>
+    <div className="rounded-xl border border-[#CFC7BB] overflow-hidden bg-[#F7F4EE] font-mono text-xs shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-[#CFC7BB] bg-[#DED8CD]/50 text-[#82786F] text-[11px]">
+              <th className="py-3 px-4 font-medium">Timestamp</th>
+              <th className="py-3 px-4 font-medium">Request & Call Reference</th>
+              <th className="py-3 px-4 font-medium">Service & Provider</th>
+              <th className="py-3 px-4 font-medium">Listed Tariff</th>
+              <th className="py-3 px-4 font-medium">Verified Paid</th>
+              <th className="py-3 px-4 font-medium">Settlement State</th>
+              <th className="py-3 px-4 font-medium hidden md:table-cell">Validation Status</th>
+              <th className="py-3 px-4 font-medium hidden lg:table-cell">On-Chain Tx</th>
+              <th className="py-3 px-4 font-medium text-right">Details</th>
+            </tr>
+          </thead>
 
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF]"
-          >
-            <option value="all">All Statuses ({records.length})</option>
-            <option value="paid">Settled</option>
-            <option value="paid output rejected">Output Rejected</option>
-            <option value="refused">Refused</option>
-            <option value="failed and not charged">Failed (No Charge)</option>
-          </select>
-
-          <select
-            value={filterService}
-            onChange={(e) => setFilterService(e.target.value)}
-            className="bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1 text-[#FAFAFA] focus:outline-none focus:border-[#FFFFFF]"
-          >
-            <option value="all">All Services</option>
-            {uniqueServices.map(sid => (
-              <option key={sid} value={sid}>{sid}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <input
-            type="text"
-            placeholder="Search ID or Tx hash..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:w-56 bg-[#0D0D0D] border border-[rgba(255, 255, 255,0.18)] rounded-md px-2.5 py-1 text-[#FAFAFA] placeholder-[#737373] focus:outline-none focus:border-[#FFFFFF]"
-          />
-        </div>
-      </div>
-
-      {/* Ledger Records Table */}
-      <div className="wallet-card rounded-lg border border-[rgba(255, 255, 255,0.18)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-[rgba(255, 255, 255,0.16)] bg-[#0E0E0E] text-[#A3A3A3]">
-                <th className="py-2.5 px-4 font-medium">Request ID</th>
-                <th className="py-2.5 px-4 font-medium">Service</th>
-                <th className="py-2.5 px-4 font-medium">Status</th>
-                <th className="py-2.5 px-4 font-medium">Amount</th>
-                <th className="py-2.5 px-4 font-medium hidden md:table-cell">Latency</th>
-                <th className="py-2.5 px-4 font-medium hidden lg:table-cell">On-Chain Tx</th>
-                <th className="py-2.5 px-4 font-medium text-right">Details</th>
+          <tbody className="divide-y divide-[#CFC7BB]/50 text-[#241B19]">
+            {records.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="text-center py-12 text-[#82786F] font-sans">
+                  No audit ledger records match the current filter criteria.
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-[rgba(255, 255, 255,0.12)] text-[#FAFAFA]">
-              {filteredRecords.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-10 text-[#737373]">
-                    No settlement records found in the current filter.
-                  </td>
-                </tr>
-              ) : (
-                filteredRecords.map((record) => {
-                  const isSelected = selectedRequestId === record.request_id;
-                  const explorerUrl = getExplorerUrl(record.tx_hash);
+            ) : (
+              records.map((record) => {
+                const isSelected = selectedRequestId === record.request_id;
+                const explorerUrl = getExplorerUrl(record.tx_hash);
+                const statusInfo = mapPaymentStatus(record.status);
+                const isPaid = record.status === 'paid';
+                const isRejected = record.status === 'paid output rejected';
 
-                  return (
-                    <tr
-                      key={record.request_id}
-                      onClick={() => onSelectRecord && onSelectRecord(record)}
-                      className={`hover:bg-[#151515] cursor-pointer transition-colors ${
-                        isSelected ? 'bg-[rgba(255, 255, 255,0.06)] border-l-2 border-l-[#FFFFFF]' : ''
-                      }`}
-                    >
-                      <td className="py-2.5 px-4 font-mono font-medium text-[#FAFAFA]">
-                        {record.request_id}
-                      </td>
+                // Extract task ID if available in record or embedded in request_id
+                const taskId = record.task_id || (record.request_id.includes('_') ? record.request_id.split('_')[1] : null);
 
-                      <td className="py-2.5 px-4 font-mono text-[#FFFFFF]">
-                        {record.service_id}
-                      </td>
+                return (
+                  <tr
+                    key={record.request_id}
+                    onClick={() => onSelectRecord && onSelectRecord(record)}
+                    className={`hover:bg-[#DED8CD]/30 cursor-pointer transition-colors ${
+                      isSelected ? 'bg-[#DED8CD]/50 border-l-2 border-l-[#7D292D]' : ''
+                    }`}
+                  >
+                    {/* 1. Timestamp */}
+                    <td className="py-3 px-4 text-[#82786F] whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <Clock className="w-3 h-3 text-[#82786F] shrink-0" />
+                        <span title={new Date(record.timestamp).toLocaleString()}>
+                          {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#82786F] block mt-0.5">
+                        {new Date(record.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      </span>
+                    </td>
 
-                      <td className="py-2.5 px-4">
-                        <StatusBadge status={record.status} />
-                      </td>
+                    {/* 2. Request & Call Reference */}
+                    <td className="py-3 px-4">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-[#241B19] truncate max-w-[170px]" title={record.request_id}>
+                            {record.request_id}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => copyToClipboard(record.request_id, record.request_id, e)}
+                            className="text-[#82786F] hover:text-[#7D292D] transition-colors cursor-pointer"
+                            title="Copy ID"
+                            aria-label="Copy request ID"
+                          >
+                            {copiedKey === record.request_id ? (
+                              <Check className="w-3 h-3 text-[#38865B]" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
 
-                      <td className="py-2.5 px-4 font-mono font-medium">
-                        {record.amount_paid} <span className="text-[11px] text-[#A3A3A3]">USDC</span>
-                      </td>
+                        {taskId && (
+                          <span className="text-[10px] text-[#82786F] block truncate max-w-[160px]">
+                            Task: {taskId}
+                          </span>
+                        )}
+                      </div>
+                    </td>
 
-                      <td className="py-2.5 px-4 font-mono text-[#A3A3A3] hidden md:table-cell">
-                        {record.latency_ms > 0 ? `${record.latency_ms} ms` : '—'}
-                      </td>
+                    {/* 3. Service & Provider */}
+                    <td className="py-3 px-4">
+                      <div className="space-y-0.5">
+                        <span className="text-[#241B19] font-medium block">{record.service_id}</span>
+                        <span className="text-[10px] text-[#82786F] block truncate max-w-[130px]" title={record.seller_id}>
+                          {record.seller_id}
+                        </span>
+                      </div>
+                    </td>
 
-                      <td className="py-2.5 px-4 hidden lg:table-cell">
-                        {explorerUrl ? (
+                    {/* 4. Listed Price */}
+                    <td className="py-3 px-4 text-[#241B19] font-medium">
+                      ${record.listed_price} <span className="text-[10px] text-[#82786F]">USDC</span>
+                      {record.listed_price_units && (
+                        <span className="text-[9px] text-[#82786F] block">{record.listed_price_units} units</span>
+                      )}
+                    </td>
+
+                    {/* 5. Verified Paid */}
+                    <td className="py-3 px-4">
+                      <span className={`font-semibold ${
+                        isPaid ? 'text-[#38865B]' : isRejected ? 'text-[#A86E24]' : 'text-[#82786F]'
+                      }`}>
+                        ${record.amount_paid} <span className="text-[10px] text-[#82786F]">USDC</span>
+                      </span>
+                      <span className="text-[9px] text-[#82786F] block">
+                        {isPaid || isRejected ? 'Authoritative' : 'Zero charge'}
+                      </span>
+                    </td>
+
+                    {/* 6. Settlement State */}
+                    <td className="py-3 px-4">
+                      <StatusBadge status={statusInfo.label} size="sm" />
+                    </td>
+
+                    {/* 7. Output Validation Status */}
+                    <td className="py-3 px-4 hidden md:table-cell">
+                      {isRejected ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#A86E24]/10 text-[#A86E24] border border-[#A86E24]/30">
+                          <AlertTriangle className="w-3 h-3 text-[#A86E24]" />
+                          <span>Schema Rejected</span>
+                        </span>
+                      ) : isPaid ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#38865B]/10 text-[#38865B] border border-[#38865B]/30">
+                          <ShieldCheck className="w-3 h-3 text-[#38865B]" />
+                          <span>Draft-7 Valid</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#82786F]">
+                          Uncharged
+                        </span>
+                      )}
+                    </td>
+
+                    {/* 8. Transaction Hash & Explorer Link */}
+                    <td className="py-3 px-4 hidden lg:table-cell">
+                      {record.tx_hash ? (
+                        explorerUrl ? (
                           <a
                             href={explorerUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="text-[#FFFFFF] hover:underline flex items-center gap-1 font-mono text-[11px]"
+                            className="text-[#7D292D] hover:underline flex items-center gap-1 text-[11px]"
                           >
-                            <span>{record.tx_hash?.slice(0, 10)}...</span>
+                            <span>{record.tx_hash.slice(0, 8)}...{record.tx_hash.slice(-4)}</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         ) : (
-                          <span className="text-[#737373] font-mono text-[11px]">Testnet Proof</span>
-                        )}
-                      </td>
+                          <span className="text-[11px] text-[#82786F] truncate max-w-[130px] block" title={record.tx_hash}>
+                            {record.tx_hash.slice(0, 14)}...
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[10px] text-[#82786F]">
+                          Local Auth / Uncharged
+                        </span>
+                      )}
+                    </td>
 
-                      <td className="py-2.5 px-4 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectRecord && onSelectRecord(record);
-                          }}
-                          className="px-2 py-0.5 rounded bg-[#171717] hover:bg-[#1F1F1F] text-[#A3A3A3] hover:text-[#FAFAFA] text-xs border border-[rgba(255, 255, 255,0.2)] transition-colors cursor-pointer"
-                        >
-                          Inspect
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                    {/* 9. Details Action */}
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectRecord && onSelectRecord(record);
+                        }}
+                        className="px-2.5 py-1 rounded bg-[#FFFFFF] hover:bg-[#7D292D] hover:text-[#F7F4EE] text-[#241B19] text-[11px] border border-[#CFC7BB] transition-colors cursor-pointer shadow-sm"
+                      >
+                        Inspect
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 };
+
+export default LedgerTable;

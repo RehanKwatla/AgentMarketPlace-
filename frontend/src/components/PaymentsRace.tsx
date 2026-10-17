@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 
 interface PaymentsRaceProps {
-  humanTxCount?: number;
-  agentTxCount?: number;
+  humanLatencyEstimateMs?: number;
+  agentObservedLatencyMs?: number;
 }
 
 export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
-  humanTxCount = 1420,
-  agentTxCount = 3891
+  humanLatencyEstimateMs = 45000,
+  agentObservedLatencyMs = 380
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -44,20 +44,20 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
       particles.push({
         x: Math.random() * width,
         y: isAgent ? (height * 0.55) + (Math.random() * (height * 0.40)) : Math.random() * (height * 0.50),
-        vx: (Math.random() - 0.5) * 0.35,
-        vy: (Math.random() - 0.5) * 0.35,
-        radius: isAgent ? Math.random() * 1.8 + 1 : Math.random() * 2 + 1,
-        alpha: Math.random() * 0.5 + 0.3,
-        color: isAgent ? '#FFFFFF' : '#A3A3A3',
+        vx: isAgent ? (Math.random() * 1.5 + 0.8) : (Math.random() * 0.2 + 0.05),
+        vy: (Math.random() - 0.5) * 0.3,
+        radius: isAgent ? Math.random() * 2 + 1.2 : Math.random() * 2 + 1,
+        alpha: Math.random() * 0.6 + 0.4,
+        color: isAgent ? '#7D292D' : '#82786F',
       });
     }
 
     const render = () => {
-      ctx.fillStyle = '#0F0F0F';
+      ctx.fillStyle = '#F7F4EE';
       ctx.fillRect(0, 0, width, height);
 
-      // Subtle grid
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+      // Subtle warm grid
+      ctx.strokeStyle = 'rgba(207, 199, 187, 0.45)';
       ctx.lineWidth = 1;
       for (let x = 0; x < width; x += 40) {
         ctx.beginPath();
@@ -73,7 +73,7 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
       }
 
       // Divider line
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+      ctx.strokeStyle = '#CFC7BB';
       ctx.beginPath();
       ctx.moveTo(0, height * 0.52);
       ctx.lineTo(width, height * 0.52);
@@ -85,8 +85,8 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
         p.x += p.vx;
         p.y += p.vy;
 
-        if (p.x < 0) p.x = width;
         if (p.x > width) p.x = 0;
+        if (p.x < 0) p.x = width;
         if (p.y < 0) p.y = height;
         if (p.y > height) p.y = 0;
 
@@ -107,44 +107,45 @@ export const PaymentsRace: React.FC<PaymentsRaceProps> = ({
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [humanTxCount, agentTxCount]);
+  }, []);
 
   return (
-    <div className="wallet-card rounded-lg overflow-hidden border border-[rgba(255, 255, 255,0.18)]">
+    <div className="rounded-xl overflow-hidden border border-[#CFC7BB] bg-[#F7F4EE] shadow-xs">
       {/* Header */}
-      <div className="px-4 py-2.5 border-b border-[rgba(255, 255, 255,0.16)] flex items-center justify-between bg-[#0E0E0E] text-xs font-sans">
+      <div className="px-4 py-3 border-b border-[#CFC7BB] flex items-center justify-between bg-[#DED8CD]/30 text-xs font-sans">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-[#FAFAFA]">Payment Flow Visualizer</span>
-          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#171717] text-[#A3A3A3] border border-[rgba(255, 255, 255,0.2)]">
+          <span className="font-semibold text-[#241B19]">Payment Flow Visualizer</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#DED8CD] text-[#241B19] border border-[#CFC7BB]">
             Telemetry
           </span>
         </div>
 
         <div className="flex items-center gap-4 text-xs font-mono">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#A3A3A3]" />
-            <span className="text-[#A3A3A3]">Human:</span>
-            <span className="text-[#FAFAFA]">{humanTxCount}</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#82786F]" />
+            <span className="text-[#82786F]">Classical Human Flow:</span>
+            <span className="text-[#241B19] font-medium">~{humanLatencyEstimateMs / 1000}s</span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#FFFFFF]" />
-            <span className="text-[#A3A3A3]">Agent:</span>
-            <span className="text-[#FFFFFF] font-medium">{agentTxCount}</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#7D292D]" />
+            <span className="text-[#82786F]">Autonomous x402:</span>
+            <span className="text-[#7D292D] font-bold">~{agentObservedLatencyMs}ms</span>
           </div>
         </div>
       </div>
 
       {/* Canvas */}
-      <div className="relative w-full h-[240px] bg-[#0F0F0F]">
+      <div className="relative w-full h-[220px] bg-[#F7F4EE]">
         <canvas ref={canvasRef} className="w-full h-full block" />
-        <div className="absolute left-3 top-2.5 text-[11px] font-sans text-[#737373]">
-          Manual Human Flow
+        <div className="absolute left-3 top-2.5 text-[11px] font-sans text-[#82786F] bg-[#FFFFFF]/90 px-2.5 py-1 rounded-md border border-[#CFC7BB] shadow-xs">
+          Manual Human Flow (Cards / Auth / OTP)
         </div>
-        <div className="absolute left-3 bottom-2.5 text-[11px] font-sans text-[#FFFFFF]">
-          Autonomous x402 Flow
+        <div className="absolute left-3 bottom-2.5 text-[11px] font-sans text-[#7D292D] font-medium bg-[#FFFFFF]/90 px-2.5 py-1 rounded-md border border-[#CFC7BB] shadow-xs">
+          Autonomous x402 Flow (EIP-712 / Instant Settlement)
         </div>
       </div>
     </div>
   );
 };
+

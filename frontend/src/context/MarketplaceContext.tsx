@@ -5,7 +5,10 @@ import {
   ReputationMetrics, 
   TaskResponse, 
   TaskPlanPreview, 
-  PlannedStepEstimate 
+  PlannedStepEstimate,
+  HealthInfo,
+  PaymentSubsystemStatus,
+  TaskHistoryItem
 } from '../types';
 import { 
   fetchHealth, 
@@ -13,20 +16,31 @@ import {
   fetchLedger, 
   fetchReputations, 
   submitBuyerTask, 
-  fetchLedgerRecord 
+  fetchLedgerRecord,
+  fetchPaymentStatus,
+  fetchPendingReconciliations,
+  reconcilePaymentAttempt
 } from '../api/client';
 
 interface MarketplaceContextType {
   services: ServiceDefinition[];
   ledger: LedgerRecord[];
   reputations: Record<string, ReputationMetrics>;
+  healthInfo: HealthInfo | null;
+  paymentStatus: PaymentSubsystemStatus | null;
+  pendingReconciliations: Record<string, any>;
+  isReconciling: boolean;
   totalVolumeUsdc: string;
   fetchError: string | null;
   refreshData: () => Promise<void>;
 
+  // Recent tasks history
+  recentTasks: TaskHistoryItem[];
+
   // Global search
   searchQuery: string;
   setSearchQuery: (q: string) => void;
+
 
   // Buyer console state
   taskPrompt: string;
@@ -40,7 +54,10 @@ interface MarketplaceContextType {
   taskResult: TaskResponse | null;
   taskError: string | null;
   handlePreviewPlan: (prompt?: string, budget?: string) => void;
-  handleExecuteConfirmedTask: () => Promise<void>;
+  handleExecuteConfirmedTask: (promptOverride?: string, budgetOverride?: string) => Promise<TaskResponse | null>;
+
+  // Reconcile attempt
+  handleReconcileAttempt: (attemptId: string) => Promise<any>;
 
   // Modal inspection state
   selectedService: ServiceDefinition | null;
@@ -57,6 +74,10 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [services, setServices] = useState<ServiceDefinition[]>([]);
   const [ledger, setLedger] = useState<LedgerRecord[]>([]);
   const [reputations, setReputations] = useState<Record<string, ReputationMetrics>>({});
+  const [healthInfo, setHealthInfo] = useState<HealthInfo | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentSubsystemStatus | null>(null);
+  const [pendingReconciliations, setPendingReconciliations] = useState<Record<string, any>>({});
+  const [isReconciling, setIsReconciling] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -73,24 +94,41 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [selectedService, setSelectedService] = useState<ServiceDefinition | null>(null);
   const [selectedLedgerRecord, setSelectedLedgerRecord] = useState<LedgerRecord | null>(null);
 
+  // Persistent Recent Tasks
+  const [recentTasks, setRecentTasks] = useState<TaskHistoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('di06_recent_tasks');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+
   const loadData = async () => {
     setFetchError(null);
     try {
-      const [, sData, lData, rData] = await Promise.all([
-        fetchHealth().catch(() => ({ status: 'unreachable', version: 'unknown', network: 'eip155:84532' })),
+      const [hData, sData, lData, rData, pData, prData] = await Promise.all([
+        fetchHealth().catch(() => null),
         fetchServices().catch(() => ({ services: [], total: 0 })),
         fetchLedger().catch(() => ({ records: [], total: 0 })),
-        fetchReputations().catch(() => ({}))
+        fetchReputations().catch(() => ({})),
+        fetchPaymentStatus().catch(() => null),
+        fetchPendingReconciliations().catch(() => ({ pending_reconciliations: {}, total: 0 }))
       ]);
 
+      setHealthInfo(hData);
       setServices(sData.services || []);
       setLedger(lData.records || []);
       setReputations(rData || {});
+      setPaymentStatus(pData);
+      setPendingReconciliations(prData.pending_reconciliations || {});
     } catch (err: any) {
       console.error('Failed to load marketplace data:', err);
       setFetchError(err.message || 'Error communicating with backend');
     }
   };
+
 
   useEffect(() => {
     loadData();
@@ -165,20 +203,47 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
-  const handleExecuteConfirmedTask = async () => {
-    if (!taskPrompt.trim() || isSubmitting) return;
+  const handleExecuteConfirmedTask = async (
+    promptOverride?: string, 
+    budgetOverride?: string
+  ): Promise<TaskResponse | null> => {
+    const prompt = (promptOverride || taskPrompt).trim();
+    const budget = budgetOverride || budgetUsdc;
+    if (!prompt || isSubmitting) return null;
 
     setIsSubmitting(true);
     setTaskError(null);
     setTaskResult(null);
 
     try {
-      const result = await submitBuyerTask(taskPrompt, budgetUsdc);
+      const result = await submitBuyerTask(prompt, budget);
       setTaskResult(result);
       setTaskPlan(null);
+
+      const newTask: TaskHistoryItem = {
+        task_id: result.task_id,
+        prompt: prompt,
+        status: result.status,
+        timestamp: new Date().toISOString(),
+        total_cost_usdc: result.total_cost_usdc,
+        budget_usdc: result.budget_allocated_usdc,
+        services_used: result.selected_services,
+      };
+
+      setRecentTasks(prev => {
+        const updated = [newTask, ...prev.filter(t => t.task_id !== newTask.task_id)].slice(0, 15);
+        try {
+          localStorage.setItem('di06_recent_tasks', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
       await loadData();
+      return result;
     } catch (err: any) {
-      setTaskError(err.message || 'Error executing task on server');
+      const msg = err.message || 'Error executing task on server';
+      setTaskError(msg);
+      throw err;
     } finally {
       setIsSubmitting(false);
     }
@@ -198,6 +263,20 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
+  const handleReconcileAttempt = async (attemptId: string) => {
+    setIsReconciling(true);
+    try {
+      const outcome = await reconcilePaymentAttempt(attemptId);
+      await loadData();
+      return outcome;
+    } catch (err: any) {
+      console.error('Reconciliation failed:', err);
+      throw err;
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
   const useServiceInTask = (service: ServiceDefinition) => {
     setTaskPrompt(`Query ${service.name} (${service.service_id}) and extract actionable insights`);
   };
@@ -208,11 +287,17 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
         services,
         ledger,
         reputations,
+        healthInfo,
+        paymentStatus,
+        pendingReconciliations,
+        isReconciling,
         totalVolumeUsdc,
         fetchError,
         refreshData: loadData,
+        recentTasks,
         searchQuery,
         setSearchQuery,
+
         taskPrompt,
         setTaskPrompt,
         budgetUsdc,
@@ -225,6 +310,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
         taskError,
         handlePreviewPlan,
         handleExecuteConfirmedTask,
+        handleReconcileAttempt,
         selectedService,
         setSelectedService,
         selectedLedgerRecord,
@@ -236,6 +322,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
       {children}
     </MarketplaceContext.Provider>
   );
+
 };
 
 export const useMarketplace = () => {

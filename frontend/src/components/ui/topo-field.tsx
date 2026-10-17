@@ -336,7 +336,7 @@ export type TopoFieldProps = {
   style?: CSSProperties;
 };
 
-const LIGHT_PAPER = "#eef1f6";
+const LIGHT_PAPER = "#E8E3DA";
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -350,13 +350,11 @@ function glslFloat(value: number, digits = 3) {
 
 function readAutomaticMode(): TopoFieldMode {
   if (typeof document === "undefined" || typeof window === "undefined")
-    return "dark";
+    return "light";
   const root = document.documentElement;
   const declared = root.dataset.scheme ?? root.dataset.theme;
   if (declared === "light" || declared === "dark") return declared;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  return "light";
 }
 
 function useAutomaticMode(enabled: boolean) {
@@ -406,19 +404,19 @@ function patchTopoField(
       `float numBands = ${glslFloat(10 * density, 2)};`,
     );
   if (mode === "light") {
-    // Additive white-on-black does not invert cleanly — mix paper toward ink by line strength.
+    // Warm ivory canvas with subtle muted taupe / sage contour lines
     next = next
       .replace(
         "gridLines = clamp(gridLines, 0.0, 1.0) * 0.12;",
-        "gridLines = clamp(gridLines, 0.0, 1.0) * 0.55;",
+        "gridLines = clamp(gridLines, 0.0, 1.0) * 0.35;",
       )
       .replace(
         "float topoLines = smoothstep(0.02, 0.00, triangleWave) * 0.45;",
-        "float topoLines = smoothstep(0.03, 0.00, triangleWave) * 0.95;",
+        "float topoLines = smoothstep(0.03, 0.00, triangleWave) * 0.60;",
       )
       .replace(
         "vec3 color = vec3(0.0);\n                    color += vec3(1.0) * gridLines;\n                    color += vec3(1.0) * topoLines;",
-        "vec3 paper = vec3(0.933, 0.945, 0.965);\n                    vec3 ink = vec3(0.12, 0.14, 0.18);\n                    float lines = clamp(gridLines + topoLines, 0.0, 1.0);\n                    vec3 color = mix(paper, ink, lines);",
+        "vec3 paper = vec3(0.910, 0.890, 0.855);\n                    vec3 ink = vec3(0.510, 0.470, 0.435);\n                    float lines = clamp(gridLines + topoLines, 0.0, 1.0);\n                    vec3 color = mix(paper, ink, lines);",
       );
   }
   return next;
@@ -518,6 +516,32 @@ body[data-threeui-ready] > [data-threeui-role] { visibility: visible !important;
  * time. Ships as a sandboxed iframe (matching the source's isolation technique) so the shader's
  * own script/canvas loop stays completely self-contained.
  */
+function checkWebGLSupported(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(media.matches);
+    const update = (e: MediaQueryListEvent) => setReduced(e.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return reduced;
+}
+
 export default function TopoField({
   mode = "dark",
   speed = 1,
@@ -532,11 +556,15 @@ export default function TopoField({
 }: TopoFieldProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const automaticMode = useAutomaticMode(mode === "auto");
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const [hasWebGL] = useState(() => checkWebGLSupported());
+
   const resolvedMode: TopoFieldMode =
     mode === "auto" ? automaticMode : mode === "light" ? "light" : "dark";
   const background = resolvedMode === "light" ? LIGHT_PAPER : "#000000";
 
-  const safeSpeed = clamp(speed, 0, 3);
+  // If reduced motion is requested, clamp speed to 0 for a static peaceful contour
+  const safeSpeed = prefersReducedMotion ? 0 : clamp(speed, 0, 3);
   const safeLength = clamp(length, 0.35, 2.5);
   const safeDensity = clamp(density, 0.25, 2.5);
   const safeOpacity = clamp(opacity, 0.05, 1);
@@ -572,6 +600,28 @@ export default function TopoField({
       ? undefined
       : `hue-rotate(${safeHue}deg) saturate(${safeSaturation}) brightness(${safeBrightness})`;
 
+  // Fallback if WebGL is disabled or unavailable on the client machine
+  if (!hasWebGL) {
+    return (
+      <div
+        className={className}
+        style={{
+          width: "100%",
+          height: "100%",
+          background: "radial-gradient(ellipse at 50% 30%, #171717 0%, #0A0A0A 100%)",
+          backgroundImage: `
+            linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)
+          `,
+          backgroundSize: "48px 48px",
+          opacity: safeOpacity,
+          ...style,
+        }}
+        aria-hidden="true"
+      />
+    );
+  }
+
   return (
     <iframe
       ref={iframeRef}
@@ -592,3 +642,4 @@ export default function TopoField({
     />
   );
 }
+

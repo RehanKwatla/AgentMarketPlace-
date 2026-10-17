@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --ivory: #f1efe7;
+    --ink: #20231f;
+    --hairline: #dad7cc;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ivory text-ink font-sans antialiased;
+    /* Warm atmospheric depth: two soft light sources, no gradient banding. */
+    background-image: radial-gradient(
+        70rem 42rem at 50% -14rem,
+        rgba(242, 213, 138, 0.22),
+        rgba(241, 239, 231, 0) 62%
+      ),
+      radial-gradient(48rem 32rem at 88% 26rem, rgba(212, 196, 168, 0.26), rgba(241, 239, 231, 0) 66%);
+    background-repeat: no-repeat;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tightest;
+    font-feature-settings: 'liga' 1, 'kern' 1;
+  }
+
+  ::selection {
+    @apply bg-champagne/60 text-ink;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-gold/70 ring-offset-2 ring-offset-ivory;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-mute;
+  }
+
+  .card {
+    @apply rounded-xl border border-hairline bg-surface shadow-surface;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-ink px-5 py-3 text-sm font-medium text-ivory transition-all duration-200 hover:bg-ink-soft hover:shadow-lifted active:translate-y-px;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-hairline bg-surface px-5 py-3 text-sm font-medium text-ink transition-all duration-200 hover:border-gold/60 hover:bg-champagne/20 active:translate-y-px;
+  }
+
+  .mono {
+    @apply font-mono text-[0.8125rem] tabular-nums;
+  }
+
+  /* Scroll-reveal: opacity/translate only, so it stays cheap next to the WebGL canvas. */
+  .reveal {
+    @apply translate-y-3 opacity-0 transition-all duration-700 ease-out;
+  }
+
+  .reveal-in {
+    @apply translate-y-0 opacity-100;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal {
+    @apply translate-y-0 opacity-100 transition-none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

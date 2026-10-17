@@ -1,10 +1,18 @@
 import React from 'react';
-import { ServiceDefinition, ReputationMetrics } from '../types';
-import { ArrowUpRight, Activity } from 'lucide-react';
+import { ServiceDefinition, ReputationMetrics, ServiceReputation } from '../types';
+import { 
+  ArrowUpRight, 
+  Activity, 
+  Database, 
+  Globe, 
+  Cpu, 
+  Layers,
+  ArrowRight
+} from 'lucide-react';
 
 interface ServiceCardProps {
   service: ServiceDefinition;
-  reputation?: ReputationMetrics;
+  reputation?: ServiceReputation | ReputationMetrics;
   onSelect?: (service: ServiceDefinition) => void;
   onViewDetail?: (service: ServiceDefinition) => void;
 }
@@ -15,84 +23,182 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   onSelect, 
   onViewDetail 
 }) => {
-  const totalCalls = reputation?.total_calls ?? 0;
-  const latency = reputation && reputation.median_latency_ms > 0 ? `${reputation.median_latency_ms.toFixed(0)}ms` : null;
+  const effectiveRep = service.reputation || reputation;
+  const totalCalls = effectiveRep?.total_calls ?? 0;
+  const hasTelemetry = totalCalls > 0;
+  const isEnabled = service.is_active && (service.enabled !== false);
+
+  const getCategoryIcon = (category: string) => {
+    switch (category.toLowerCase()) {
+      case 'data': return <Database className="w-3.5 h-3.5 text-[#586452]" />;
+      case 'scraping': return <Globe className="w-3.5 h-3.5 text-[#A86E24]" />;
+      case 'inference': return <Cpu className="w-3.5 h-3.5 text-[#7D292D]" />;
+      default: return <Layers className="w-3.5 h-3.5 text-[#82786F]" />;
+    }
+  };
+
+  // Truncate address helper
+  const truncateAddress = (addr?: string) => {
+    if (!addr) return 'Unknown Provider';
+    if (addr.length <= 12) return addr;
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  };
+
+  // Extract top schema property names
+  const inputProps = service.input_schema?.properties 
+    ? Object.keys(service.input_schema.properties) 
+    : [];
+  const outputProps = service.output_schema?.properties 
+    ? Object.keys(service.output_schema.properties) 
+    : [];
 
   return (
-    <div className="wallet-card rounded-lg p-4 flex flex-col justify-between border border-[rgba(255, 255, 255,0.18)] hover:border-[rgba(255, 255, 255,0.35)] transition-colors">
-      <div>
-        {/* Top: Category & Price */}
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <span className="capitalize text-[11px] font-medium px-2 py-0.5 rounded bg-[#171717] text-[#A3A3A3] border border-[rgba(255, 255, 255,0.18)]">
-            {service.category}
-          </span>
-          <span className="text-xs font-mono font-medium text-[#FFFFFF]">
-            {service.price_usdc} USDC
-          </span>
+    <div className="group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 flex flex-col justify-between transition-all duration-200 space-y-4">
+      {/* Top Header: Category, Status, Price */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#DED8CD]/60 border border-[#CFC7BB] text-[10px] uppercase font-mono tracking-wider text-[#586452] font-semibold">
+              {getCategoryIcon(service.category)}
+              <span>{service.category}</span>
+            </span>
+
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+              isEnabled 
+                ? 'bg-[#E4EFE8] text-[#38865B] border-[#A8B3A1]/70' 
+                : 'bg-[#F4ECEB] text-[#7D292D] border-[#CFC7BB]'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isEnabled ? 'bg-[#38865B]' : 'bg-[#7D292D]'}`} />
+              <span>{isEnabled ? 'Active' : 'Disabled'}</span>
+            </span>
+          </div>
+
+          <div className="text-right">
+            <div className="flex items-baseline gap-1">
+              <span className="text-sm font-bold font-mono text-[#7D292D]">
+                {service.price_usdc}
+              </span>
+              <span className="text-[10px] font-mono text-[#82786F]">USDC</span>
+            </div>
+            <span className="text-[9px] font-mono text-[#82786F] block">per call</span>
+          </div>
         </div>
 
         {/* Title & Description */}
-        <div className="mb-3">
+        <div>
           <h3 
-            className="text-sm font-semibold text-[#FAFAFA] hover:text-[#FFFFFF] transition-colors flex items-center gap-1 cursor-pointer"
             onClick={() => onViewDetail && onViewDetail(service)}
+            className="text-sm font-semibold text-[#241B19] group-hover:text-[#7D292D] transition-colors flex items-center gap-1 cursor-pointer font-sans"
           >
-            <span>{service.name}</span>
-            <ArrowUpRight className="w-3.5 h-3.5 text-[#A3A3A3]" />
+            <span className="truncate">{service.name}</span>
+            <ArrowUpRight className="w-3.5 h-3.5 text-[#82786F] group-hover:text-[#7D292D] transition-colors shrink-0" />
           </h3>
-          <p className="text-xs text-[#A3A3A3] mt-1 leading-relaxed line-clamp-2">
-            {service.description || 'Verified microservice for autonomous x402 payment workflows.'}
+          <p className="text-xs text-[#82786F] mt-1 line-clamp-2 leading-relaxed font-sans">
+            {service.description || 'Verified pay-per-call microservice endpoint on Base Sepolia.'}
           </p>
         </div>
 
-        {/* Endpoint Info */}
-        <div className="bg-[#0D0D0D] rounded p-2 border border-[rgba(255, 255, 255,0.14)] font-mono text-[11px] space-y-1 mb-3">
-          <div className="flex items-center justify-between text-[#A3A3A3]">
-            <span className="text-[#737373]">Route:</span>
-            <span className="text-[#FAFAFA] truncate max-w-[180px]" title={service.endpoint_url}>
-              {service.endpoint_url}
+        {/* Capabilities Badges */}
+        {service.capabilities && service.capabilities.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {service.capabilities.slice(0, 3).map((cap, idx) => (
+              <span 
+                key={idx}
+                className="px-1.5 py-0.5 rounded bg-[#DED8CD]/60 border border-[#CFC7BB] text-[10px] font-mono text-[#241B19]"
+              >
+                {cap}
+              </span>
+            ))}
+            {service.capabilities.length > 3 && (
+              <span className="text-[10px] font-mono text-[#82786F] self-center">
+                +{service.capabilities.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Schema Summary */}
+        {(inputProps.length > 0 || outputProps.length > 0) && (
+          <div className="p-2.5 rounded-lg bg-[#FFFFFF] border border-[#CFC7BB] font-mono text-[10px] space-y-1">
+            {inputProps.length > 0 && (
+              <div className="flex items-center gap-1.5 text-[#82786F]">
+                <span className="text-[#241B19] uppercase font-semibold">In:</span>
+                <span className="truncate text-[#82786F]">{inputProps.join(', ')}</span>
+              </div>
+            )}
+            {outputProps.length > 0 && (
+              <div className="flex items-center gap-1.5 text-[#82786F]">
+                <span className="text-[#241B19] uppercase font-semibold">Out:</span>
+                <span className="truncate text-[#82786F]">{outputProps.join(', ')}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Provider & Network Info */}
+        <div className="pt-2 border-t border-[#CFC7BB]/60 flex items-center justify-between text-[10px] font-mono text-[#82786F]">
+          <div>
+            <span>Provider: </span>
+            <span className="text-[#241B19]" title={service.pay_to}>
+              {truncateAddress(service.pay_to)}
             </span>
           </div>
-          <div className="flex items-center justify-between text-[#A3A3A3]">
-            <span className="text-[#737373]">PayTo:</span>
-            <span className="text-[#FFFFFF] text-[10px]" title={service.pay_to}>
-              {service.pay_to ? `${service.pay_to.slice(0, 6)}...${service.pay_to.slice(-4)}` : 'Auto'}
-            </span>
+          <div>
+            <span>ID: </span>
+            <span className="text-[#241B19]">{service.service_id}</span>
           </div>
         </div>
       </div>
 
-      {/* Footer Metrics & Actions */}
-      <div className="pt-2.5 border-t border-[rgba(255, 255, 255,0.14)]">
-        <div className="flex items-center justify-between text-xs mb-2.5">
-          <div className="text-[#A3A3A3] text-[11px]">
-            {totalCalls > 0 ? (
-              <span className="flex items-center gap-1 text-[#FAFAFA] font-mono">
-                <Activity className="w-3 h-3 text-[#A3A3A3]" />
-                {totalCalls} calls {latency && `(${latency})`}
+      {/* Footer: Telemetry & Actions */}
+      <div className="space-y-3 pt-2">
+        {/* Telemetry row */}
+        <div className="flex items-center justify-between text-[11px] font-mono">
+          {hasTelemetry ? (
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-[#241B19]">
+                <Activity className="w-3 h-3 text-[#38865B]" />
+                <span>{effectiveRep?.total_calls} calls</span>
               </span>
-            ) : (
-              <span className="text-[#737373]">Ready for calls</span>
-            )}
-          </div>
-          <span className="text-[10px] font-mono text-[#A3A3A3]">Base Sepolia</span>
+              {effectiveRep?.median_latency_ms && (
+                <span className="text-[#82786F]">
+                  • {effectiveRep.median_latency_ms.toFixed(0)}ms
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-[#82786F]">No call history yet</span>
+          )}
+
+          {hasTelemetry && effectiveRep?.reputation_score !== undefined ? (
+            <span className="text-[#38865B] font-semibold">
+              {effectiveRep.reputation_score}% score
+            </span>
+          ) : (
+            <span className="text-[10px] text-[#82786F]">Base Sepolia</span>
+          )}
         </div>
 
+        {/* Action buttons */}
         <div className="flex items-center gap-2">
           {onViewDetail && (
             <button
+              type="button"
               onClick={() => onViewDetail(service)}
-              className="flex-1 py-1 px-2.5 rounded bg-[#171717] hover:bg-[#1C1C1C] text-[#A3A3A3] hover:text-[#FAFAFA] text-xs font-medium border border-[rgba(255, 255, 255,0.2)] transition-colors cursor-pointer text-center"
+              className="flex-1 py-1.5 px-3 rounded-md bg-[#FFFFFF] hover:bg-[#DED8CD]/60 text-[#241B19] text-xs font-mono border border-[#CFC7BB] transition-colors cursor-pointer text-center shadow-xs"
             >
-              Details
+              View Details
             </button>
           )}
+
           {onSelect && (
             <button
+              type="button"
               onClick={() => onSelect(service)}
-              className="flex-1 py-1 px-2.5 rounded bg-[#FFFFFF] hover:bg-[#E5E5E5] text-[#0A0A0A] text-xs font-medium transition-colors cursor-pointer text-center"
+              className="flex-1 py-1.5 px-3 rounded-md bg-[#7D292D] hover:bg-[#612024] text-[#F7F4EE] font-semibold text-xs font-mono transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm"
             >
-              Use in Task
+              <span>Use Service</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
