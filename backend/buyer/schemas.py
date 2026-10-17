@@ -49,6 +49,7 @@ class TaskCreationRequest(BaseModel):
     required_categories: Optional[List[str]] = Field(default=None)
     execute_now: bool = Field(default=True, description="Whether to execute the task immediately after creation and persistence")
     background: bool = Field(default=False, description="Whether to execute task in an asynchronous background worker")
+    idempotency_key: Optional[str] = Field(default=None, description="Client idempotency key to prevent duplicate task submissions")
 
     @model_validator(mode="before")
     @classmethod
@@ -69,9 +70,19 @@ class TaskCreationRequest(BaseModel):
             atomic = data.get("max_budget_atomic")
             usdc = data.get("budget_usdc")
 
+            # Load configured server limit (default 1.0 USDC = 1,000,000 base units)
+            from backend.shared.config import get_settings
+            server_settings = get_settings()
+            max_limit_usdc = getattr(server_settings, "buyer_max_budget_usdc", "1.000000")
+            max_limit_units = usdc_to_base_units(max_limit_usdc)
+
             if atomic is not None:
                 if not isinstance(atomic, int) or atomic <= 0:
                     raise ValueError("max_budget_atomic must be a strictly positive integer (> 0).")
+                if atomic > max_limit_units:
+                    raise ValueError(
+                        f"Task budget of {atomic} base units exceeds configured server limit of {max_limit_units} base units ({max_limit_usdc} USDC)."
+                    )
                 if not usdc:
                     data["budget_usdc"] = base_units_to_usdc(atomic)
             elif usdc is not None:
@@ -81,6 +92,10 @@ class TaskCreationRequest(BaseModel):
                     raise ValueError(f"Invalid decimal USDC budget formatting '{usdc}': {e}")
                 if units <= 0:
                     raise ValueError("budget_usdc must be strictly positive (> 0).")
+                if units > max_limit_units:
+                    raise ValueError(
+                        f"Task budget of {usdc} USDC ({units} base units) exceeds configured server limit of {max_limit_usdc} USDC ({max_limit_units} base units)."
+                    )
                 data["max_budget_atomic"] = units
             else:
                 raise ValueError("Must provide an explicit spending budget via 'budget_usdc' or 'max_budget_atomic'.")
@@ -109,9 +124,16 @@ class ServiceCallRecord(BaseModel):
     latency_ms: float = 0.0
     transaction_hash: Optional[str] = None
     payment_reference: Optional[str] = None
+    payment_attempt_id: Optional[str] = None
+    ledger_reference: Optional[str] = None
+    network: Optional[str] = None
+    is_settlement_confirmed: bool = False
     schema_version: Optional[str] = "1.0.0"
     output: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    error_code: Optional[str] = None
+    failure_stage: Optional[str] = None
+    user_message: Optional[str] = None
     validation_status: str = "unvalidated"
     validation_details: Optional[Dict[str, Any]] = None
     source_metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -155,6 +177,14 @@ class ServiceSelectionReason(BaseModel):
     reputation_score: Optional[float] = None
     median_latency_ms: Optional[float] = None
     relevance: Optional[float] = None
+    # Person A Phase 3 Explainable Service Selection (factual selection data)
+    requested_capability: Optional[str] = None
+    selected_service: Optional[str] = None
+    price_used_usdc: Optional[str] = None
+    price_used_atomic: Optional[int] = None
+    budget_compatible: bool = True
+    budget_limit_usdc: Optional[str] = None
+    evaluated_alternatives: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class PurchaseExplanation(BaseModel):
@@ -197,13 +227,17 @@ class TaskDetailResponse(BaseModel):
     remaining_usdc: str = "0.000000"
     remaining_atomic: int = 0
     max_concurrency: int = 3
+    idempotency_key: Optional[str] = None
+    is_settlement_confirmed: bool = False
+    failure_code: Optional[str] = None
+    failure_stage: Optional[str] = None
+    failure_reason: Optional[str] = None
     plan_summary: Optional[Dict[str, Any]] = None
     calls: List[ServiceCallRecord] = Field(default_factory=list)
     result: Optional[Dict[str, Any]] = None
     final_result: Optional[str] = None
     explanation: Optional[PurchaseExplanation] = None
     cost_explanation: Optional[str] = None
-    failure_reason: Optional[str] = None
     created_at: str
     completed_at: Optional[str] = None
 
@@ -218,6 +252,10 @@ class TaskResultResponse(BaseModel):
     explanation: Optional[Dict[str, Any]] = None
     spent_usdc: str = "0.000000"
     remaining_usdc: str = "0.000000"
+    idempotency_key: Optional[str] = None
+    is_settlement_confirmed: bool = False
+    failure_code: Optional[str] = None
+    failure_stage: Optional[str] = None
     failure_reason: Optional[str] = None
     calls: List[ServiceCallRecord] = Field(default_factory=list)
 

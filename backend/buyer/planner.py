@@ -95,6 +95,13 @@ class TaskPlanner:
         - Inference step depends on upstream Scraping and/or Data steps (sequential dependency).
         """
         budget_units = usdc_to_base_units(request.budget_usdc)
+        if budget_units <= 0:
+            raise PlanValidationError("Budget must be strictly positive (> 0).")
+        if budget_units < 1500:
+            raise PlanValidationError(
+                f"Task budget of {request.budget_usdc} USDC ({budget_units} base units) is insufficient to execute any service in the registry (minimum service price is 1500 base units / 0.001500 USDC)."
+            )
+
         prompt_lower = (request.task or "").lower()
 
         need_scraping = False
@@ -142,6 +149,7 @@ class TaskPlanner:
 
             fb_ids = [f.service_id for f in fallbacks]
             max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
+            sel_details = getattr(primary_svc, "_selection_details", {})
 
             calls.append(PlannedCall(
                 step_id=scraping_step_id,
@@ -155,6 +163,8 @@ class TaskPlanner:
                 depends_on=[],
                 selection_reason=reason,
                 allow_fallback=True,
+                requested_capability="scraping.extract.v1",
+                selection_details=sel_details,
             ))
             reasons_for_selection[primary_svc.service_id] = reason
             step_id += 1
@@ -194,6 +204,7 @@ class TaskPlanner:
 
             fb_ids = [f.service_id for f in fallbacks]
             max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
+            sel_details = getattr(primary_svc, "_selection_details", {})
 
             calls.append(PlannedCall(
                 step_id=data_step_id,
@@ -207,6 +218,8 @@ class TaskPlanner:
                 depends_on=[],
                 selection_reason=reason,
                 allow_fallback=True,
+                requested_capability="data.lookup.v1",
+                selection_details=sel_details,
             ))
             reasons_for_selection[primary_svc.service_id] = reason
             step_id += 1
@@ -235,6 +248,7 @@ class TaskPlanner:
 
             fb_ids = [f.service_id for f in fallbacks]
             max_svc_price = max([primary_svc.price_atomic] + [f.price_atomic for f in fallbacks])
+            sel_details = getattr(primary_svc, "_selection_details", {})
 
             calls.append(PlannedCall(
                 step_id=step_id,
@@ -248,6 +262,8 @@ class TaskPlanner:
                 depends_on=deps,
                 selection_reason=reason,
                 allow_fallback=True,
+                requested_capability="inference.summarize.v1",
+                selection_details=sel_details,
             ))
             reasons_for_selection[primary_svc.service_id] = reason
             step_id += 1

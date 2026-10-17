@@ -101,6 +101,12 @@ def _migrate_schema(engine_to_migrate) -> None:
                     conn.execute(text("ALTER TABLE tasks ADD COLUMN failure_reason TEXT"))
                 if "final_result" not in t_columns:
                     conn.execute(text("ALTER TABLE tasks ADD COLUMN final_result TEXT"))
+                if "idempotency_key" not in t_columns:
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN idempotency_key VARCHAR(128)"))
+                if "failure_code" not in t_columns:
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN failure_code VARCHAR(64)"))
+                if "failure_stage" not in t_columns:
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN failure_stage VARCHAR(64)"))
     except Exception:
         pass
 

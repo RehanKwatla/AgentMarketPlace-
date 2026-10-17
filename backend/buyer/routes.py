@@ -1,6 +1,6 @@
 from typing import List, Optional
 import asyncio
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Header, Query, status
 from fastapi.responses import JSONResponse
 from backend.buyer.schemas import (
     TaskCallsResponse,
@@ -50,8 +50,16 @@ async def legacy_list_tasks_endpoint(
     summary="Submit and Create Autonomous Buyer Task",
     description="Validate natural language prompt and budget, persist task session, and orchestrate execution."
 )
-async def create_task(request: TaskCreationRequest, background: bool = Query(False, description="Run execution in background worker")):
+async def create_task(
+    request: TaskCreationRequest,
+    background: bool = Query(False, description="Run execution in background worker"),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+):
     """Create task record in 'accepted' state, persist it, and execute planned workflow."""
+    key = idempotency_key or x_idempotency_key or request.idempotency_key
+    if key and not request.idempotency_key:
+        request.idempotency_key = key
     is_bg = background or getattr(request, "background", False)
     task_response = await buyer_service.submit_and_execute_task(request, background=is_bg)
     resp_status = status.HTTP_202_ACCEPTED if is_bg else status.HTTP_201_CREATED
@@ -104,7 +112,14 @@ async def execute_task_endpoint(task_id: str, background: bool = Query(False, de
     summary="Legacy Buyer Task Submission Endpoint",
     description="Maintains backward compatibility for /api/v1/buyer/tasks callers."
 )
-async def legacy_create_task(request: TaskCreationRequest):
+async def legacy_create_task(
+    request: TaskCreationRequest,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+):
+    key = idempotency_key or x_idempotency_key or request.idempotency_key
+    if key and not request.idempotency_key:
+        request.idempotency_key = key
     task_record = await buyer_service.submit_and_execute_task(request)
 
     legacy_executions = []

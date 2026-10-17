@@ -60,6 +60,11 @@ def enforce_test_provider_mode():
 def clean_ledger_state():
     """Ensure test isolation by clearing ledger repository state between tests."""
     try:
+        from backend.database.session import init_db
+        init_db()
+    except Exception:
+        pass
+    try:
         from backend.ledger.models import ledger_repo
         ledger_repo.clear()
     except Exception:

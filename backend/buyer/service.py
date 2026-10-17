@@ -4,6 +4,7 @@ import dataclasses
 import json
 import time
 import uuid
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
@@ -41,6 +42,8 @@ from backend.buyer.schemas import (
     TaskStatus,
 )
 
+logger = logging.getLogger("buyer.service")
+
 
 class BuyerService:
     """Manages the full buyer task lifecycle from acceptance to execution, Member 1 payment, and Member 4 ledger."""
@@ -70,6 +73,19 @@ class BuyerService:
         self._tasks: Dict[str, TaskDetailResponse] = {}
         self._task_plans: Dict[str, ExecutionPlan] = {}
         self._task_requests: Dict[str, TaskCreationRequest] = {}
+        self._tasks_by_idempotency: Dict[str, str] = {}
+
+    def get_task_by_idempotency_key(self, idempotency_key: str) -> Optional[TaskDetailResponse]:
+        """Look up task by client idempotency key from memory or database."""
+        if not idempotency_key:
+            return None
+        tid = self._tasks_by_idempotency.get(idempotency_key)
+        if tid:
+            return self.get_task(tid)
+        db_rec = self.repository.get_task_by_idempotency_key(idempotency_key)
+        if db_rec:
+            return self.get_task(db_rec.task_id)
+        return None
 
     def get_task(self, task_id: str) -> Optional[TaskDetailResponse]:
         """Retrieve task detail from in-memory state or fallback to persisted database record."""
@@ -97,7 +113,10 @@ class BuyerService:
                 max_concurrency=3,
                 calls=[],
                 failure_reason=getattr(db_record, "failure_reason", None),
+                failure_code=getattr(db_record, "failure_code", None),
+                failure_stage=getattr(db_record, "failure_stage", None),
                 final_result=getattr(db_record, "final_result", None),
+                idempotency_key=getattr(db_record, "idempotency_key", None),
                 created_at=db_record.created_at.isoformat() if db_record.created_at else datetime.now(timezone.utc).isoformat()
             )
             self._tasks[task_id] = fallback_task
@@ -142,6 +161,10 @@ class BuyerService:
             explanation=task.explanation.model_dump() if task.explanation else None,
             spent_usdc=task.spent_usdc,
             remaining_usdc=task.remaining_usdc,
+            idempotency_key=task.idempotency_key,
+            is_settlement_confirmed=task.is_settlement_confirmed,
+            failure_code=task.failure_code,
+            failure_stage=task.failure_stage,
             failure_reason=task.failure_reason,
             calls=task.calls
         )
@@ -174,6 +197,11 @@ class BuyerService:
 
     def create_task(self, request: TaskCreationRequest) -> TaskDetailResponse:
         """Step 1 of Lifecycle: Validate & persist task in 'accepted' state without executing payments."""
+        if request.idempotency_key:
+            existing = self.get_task_by_idempotency_key(request.idempotency_key)
+            if existing:
+                return existing
+
         task_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
         budget_units = usdc_to_base_units(request.budget_usdc)
@@ -183,11 +211,13 @@ class BuyerService:
             task_id=task_id,
             task_prompt=request.task,
             budget_usdc=request.budget_usdc,
-            status=TaskStatus.ACCEPTED.value
+            status=TaskStatus.ACCEPTED.value,
+            idempotency_key=request.idempotency_key
         )
 
         task_record = TaskDetailResponse(
             task_id=task_id,
+            idempotency_key=request.idempotency_key,
             status=TaskStatus.ACCEPTED.value,
             task=request.task,
             budget_usdc=request.budget_usdc,
@@ -205,6 +235,8 @@ class BuyerService:
             created_at=created_at
         )
         self._tasks[task_id] = task_record
+        if request.idempotency_key:
+            self._tasks_by_idempotency[request.idempotency_key] = task_id
         self._task_requests[task_id] = request
         return task_record
 
@@ -238,6 +270,8 @@ class BuyerService:
             # Plan rejected before execution (e.g. over budget, cycle, or invalid service)
             task_record.status = TaskStatus.REFUSED.value
             task_record.failure_reason = str(e)
+            task_record.failure_code = "INSUFFICIENT_BUDGET" if "budget" in str(e).lower() else "PLANNING_ERROR"
+            task_record.failure_stage = "planning"
             task_record.result = {"error": str(e)}
             task_record.final_result = f"Task refused: {str(e)}"
             task_record.explanation = self.explanation_gen.generate_explanation(
@@ -253,7 +287,9 @@ class BuyerService:
                 status=TaskStatus.REFUSED.value,
                 total_cost_usdc="0.000000",
                 failure_reason=task_record.failure_reason,
-                final_result=task_record.final_result
+                final_result=task_record.final_result,
+                failure_code=task_record.failure_code,
+                failure_stage=task_record.failure_stage
             )
             return task_record
 
@@ -316,16 +352,29 @@ class BuyerService:
         has_succeeded = any(c.status == CallStatus.SUCCEEDED for c in all_calls)
         has_refused = any(c.status == CallStatus.REFUSED for c in all_calls)
 
+        task_failure_code = None
+        task_failure_stage = None
+
         if has_pending_recon:
             task_status = TaskStatus.PENDING_RECONCILIATION.value
+            task_failure_code = "SETTLEMENT_PENDING_RECONCILIATION"
+            task_failure_stage = "settlement_verification"
         elif has_rejected and has_succeeded:
             task_status = TaskStatus.COMPLETED_WITH_WARNINGS.value
+            task_failure_code = "OUTPUT_VALIDATION_FAILED"
+            task_failure_stage = "output_validation"
         elif has_succeeded:
             task_status = TaskStatus.COMPLETED.value
         elif has_refused:
             task_status = TaskStatus.REFUSED.value
+            task_failure_code = "TASK_REFUSED"
+            task_failure_stage = "planning"
         else:
             task_status = TaskStatus.FAILED.value
+            task_failure_code = "TASK_EXECUTION_FAILED"
+            task_failure_stage = "seller_execution"
+
+        is_settlement_confirmed = any(c.is_settlement_confirmed for c in all_calls)
 
         if task_status == TaskStatus.FAILED.value and not task_record.failure_reason:
             failed_reasons = [f"{c.service_id}: {c.error}" for c in all_calls if c.error]
@@ -349,6 +398,9 @@ class BuyerService:
                 task_record.failure_reason = "Completed with warnings: " + "; ".join(warn_reasons)
 
         task_record.status = task_status
+        task_record.failure_code = task_failure_code
+        task_record.failure_stage = task_failure_stage
+        task_record.is_settlement_confirmed = is_settlement_confirmed
         task_record.calls = all_calls
         task_record.spent_usdc = total_spent_usdc
         task_record.spent_atomic = total_spent_units
@@ -367,7 +419,9 @@ class BuyerService:
             status=task_status,
             total_cost_usdc=base_units_to_usdc(total_spent_units),
             failure_reason=task_record.failure_reason,
-            final_result=task_record.final_result
+            final_result=task_record.final_result,
+            failure_code=task_failure_code,
+            failure_stage=task_failure_stage
         )
 
         return task_record
@@ -378,6 +432,22 @@ class BuyerService:
         background: bool = False
     ) -> TaskDetailResponse:
         """Create task, persist it, and if execute_now is True, run the execution pipeline."""
+        if request.idempotency_key:
+            existing = self.get_task_by_idempotency_key(request.idempotency_key)
+            if existing:
+                if existing.status in [
+                    TaskStatus.RUNNING.value,
+                    TaskStatus.COMPLETED.value,
+                    TaskStatus.COMPLETED_WITH_WARNINGS.value,
+                    TaskStatus.REFUSED.value,
+                    TaskStatus.FAILED.value,
+                    TaskStatus.PENDING_RECONCILIATION.value,
+                ]:
+                    return existing
+                if request.execute_now:
+                    return await self.execute_task(existing.task_id)
+                return existing
+
         task_record = self.create_task(request)
         if request.execute_now:
             if background or getattr(request, "background", False):
@@ -421,6 +491,11 @@ class BuyerService:
                 depends_on=planned.depends_on,
                 status=CallStatus.REFUSED,
                 listed_price_usdc=base_units_to_usdc(planned.estimated_price_units),
+                error_code="SERVICE_NOT_FOUND",
+                failure_stage="service_lookup",
+                user_message="Requested service not found in registry.",
+                ledger_reference=call_id,
+                is_settlement_confirmed=False,
                 error=err
             )
 
@@ -445,6 +520,12 @@ class BuyerService:
                     status=CallStatus.FAILED_AND_NOT_CHARGED,
                     listed_price_usdc=service.price_usdc,
                     amount_paid_usdc="0.000000",
+                    error_code="DEPENDENCY_FAILED",
+                    failure_stage="dependency_check",
+                    user_message="Prior required service call failed or produced invalid output.",
+                    ledger_reference=call_id,
+                    network=service.network,
+                    is_settlement_confirmed=False,
                     error=err,
                     validation_status="not_applicable"
                 )
@@ -480,6 +561,12 @@ class BuyerService:
                 depends_on=planned.depends_on,
                 status=CallStatus.REFUSED,
                 listed_price_usdc=service.price_usdc,
+                error_code="INSUFFICIENT_BUDGET",
+                failure_stage="budget_reservation",
+                user_message="Remaining task budget is insufficient for this service call.",
+                ledger_reference=call_id,
+                network=service.network,
+                is_settlement_confirmed=False,
                 error=err
             )
 
@@ -505,6 +592,12 @@ class BuyerService:
                 depends_on=planned.depends_on,
                 status=CallStatus.REFUSED,
                 listed_price_usdc=service.price_usdc,
+                error_code="INSUFFICIENT_BUDGET",
+                failure_stage="budget_reservation",
+                user_message="Failed to reserve budget for this service call.",
+                ledger_reference=call_id,
+                network=service.network,
+                is_settlement_confirmed=False,
                 error=err
             )
 
@@ -552,6 +645,10 @@ class BuyerService:
         raw_output = None
         tx_hash = None
         error_msg = None
+        call_error_code: Optional[str] = None
+        call_failure_stage: Optional[str] = None
+        call_user_message: Optional[str] = None
+        payment_attempt_id: Optional[str] = None
         paid = False
         payment_dispatched = False
         uncertain_payment = False
@@ -586,7 +683,11 @@ class BuyerService:
                     if req_obj is None:
                         req_header = resp_402.headers.get(HEADER_X402_REQUIREMENT)
                         if not req_header:
-                            raise ValueError("Seller returned HTTP 402 without valid payment requirement header.")
+                            call_error_code = "PAYMENT_CHALLENGE_FAILED"
+                            call_failure_stage = "seller_challenge"
+                            call_user_message = "Seller returned HTTP 402 without a valid payment requirement."
+                            logger.warning("Call %s: invalid 402 requirement header from seller: %s", call_id, resp_402.headers)
+                            raise ValueError(call_user_message)
                         req_data = json.loads(req_header)
                         req_obj = PaymentRequirement(**req_data)
 
@@ -598,13 +699,27 @@ class BuyerService:
                         )
                     except Exception as pe:
                         policy_violation = True
+                        call_error_code = "POLICY_VIOLATION"
+                        call_failure_stage = "policy_verification"
+                        call_user_message = f"Payment terms violate service registry policy: {str(pe)}"
+                        logger.warning("Call %s policy verification failed: %s", call_id, str(pe))
                         raise pe
 
                     # Step C: Prepare signed authorization payload via Member 1 PaymentClient
-                    payment_payload = await self.payment_client.create_payment_payload(
-                        requirement=req_obj,
-                        idempotency_key=idempotency_key
-                    )
+                    payment_attempt_id = f"pay_att_{idempotency_key}"
+                    try:
+                        payment_payload = await self.payment_client.create_payment_payload(
+                            requirement=req_obj,
+                            idempotency_key=idempotency_key
+                        )
+                    except Exception as pay_err:
+                        is_insufficient = "insufficient" in str(pay_err).lower() or "balance" in str(pay_err).lower()
+                        call_error_code = "INSUFFICIENT_FUNDS" if is_insufficient else "PAYMENT_AUTHORIZATION_FAILED"
+                        call_failure_stage = "payment_authorization"
+                        call_user_message = "Buyer balance insufficient to authorize payment." if is_insufficient else "Payment authorization generation failed."
+                        logger.error("Call %s payment authorization failed: %s", call_id, str(pay_err))
+                        raise pay_err
+
                     payment_dispatched = True
 
                     # Step D: Re-request with dual compatibility payment headers
@@ -650,30 +765,51 @@ class BuyerService:
                             except Exception as je:
                                 raw_output = resp_paid.text
                                 error_msg = f"Malformed JSON: {str(je)}"
+                                logger.warning("Call %s malformed JSON from seller: %s", call_id, str(je))
                         else:
                             # HTTP 200 returned but settlement proof is missing or unverified -> UNCERTAIN SETTLEMENT
                             uncertain_payment = True
+                            call_error_code = "SETTLEMENT_PENDING_RECONCILIATION"
+                            call_failure_stage = "settlement_verification"
+                            call_user_message = "Seller returned HTTP 200 but settlement proof is missing or unconfirmed."
+                            error_msg = call_user_message
+                            logger.warning("Call %s settlement unverified. proof_header: %s", call_id, proof_header)
                             try:
                                 raw_output = resp_paid.json()
                             except Exception:
                                 raw_output = resp_paid.text
-                            error_msg = "Seller returned HTTP 200 but settlement proof is missing or unverified."
                     elif resp_paid.status_code in [502, 503, 504]:
                         uncertain_payment = True
+                        call_error_code = "SETTLEMENT_PENDING_RECONCILIATION"
+                        call_failure_stage = "seller_execution"
+                        call_user_message = f"Gateway error HTTP {resp_paid.status_code} received after payment dispatch."
                         error_msg = f"Gateway error HTTP {resp_paid.status_code} after payment dispatched: {resp_paid.text}"
+                        logger.error("Call %s gateway error post-payment: %s", call_id, resp_paid.text)
                     else:
+                        call_error_code = "SELLER_EXECUTION_ERROR"
+                        call_failure_stage = "seller_execution"
+                        call_user_message = f"Seller returned execution error HTTP {resp_paid.status_code}."
                         error_msg = f"Seller HTTP {resp_paid.status_code}: {resp_paid.text}"
+                        logger.error("Call %s seller error post-payment: HTTP %s: %s", call_id, resp_paid.status_code, resp_paid.text)
 
                 elif resp_402.status_code == 200:
                     paid = False
                     raw_output = resp_402.json()
                 else:
+                    call_error_code = "SELLER_EXECUTION_ERROR"
+                    call_failure_stage = "seller_challenge"
+                    call_user_message = f"Seller returned unexpected status HTTP {resp_402.status_code} before payment challenge."
                     error_msg = f"Unexpected status {resp_402.status_code}: {resp_402.text}"
+                    logger.error("Call %s unexpected initial status: %s", call_id, resp_402.text)
 
         except asyncio.CancelledError:
             if payment_dispatched and not paid:
                 uncertain_payment = True
-                error_msg = "Call cancelled after payment authorization dispatched."
+                call_error_code = "SETTLEMENT_PENDING_RECONCILIATION"
+                call_failure_stage = "task_cancelled"
+                call_user_message = "Call cancelled while payment was dispatched."
+                error_msg = call_user_message
+                logger.warning("Call %s cancelled after payment dispatched", call_id)
             else:
                 await budget_mgr.release(res_id)
                 error_msg = "Call cancelled before payment challenge completion."
@@ -686,6 +822,12 @@ class BuyerService:
                     status=CallStatus.FAILED_AND_NOT_CHARGED,
                     listed_price_usdc=service.price_usdc,
                     amount_paid_usdc="0.000000",
+                    error_code="TASK_CANCELLED",
+                    failure_stage="task_cancelled",
+                    user_message="Call cancelled prior to payment.",
+                    ledger_reference=call_id,
+                    network=service.network,
+                    is_settlement_confirmed=False,
                     error=error_msg,
                     validation_status="not_applicable",
                     completed_at=datetime.now(timezone.utc).isoformat()
@@ -703,15 +845,31 @@ class BuyerService:
         except httpx.TimeoutException as te:
             if payment_dispatched:
                 uncertain_payment = True
+                call_error_code = "SETTLEMENT_PENDING_RECONCILIATION"
+                call_failure_stage = "seller_execution"
+                call_user_message = "Network timeout after payment dispatch; status uncertain."
                 error_msg = f"Network timeout after payment dispatched: {str(te)}"
+                logger.error("Call %s network timeout after payment dispatch: %s", call_id, str(te))
             else:
+                call_error_code = "SELLER_UNAVAILABLE"
+                call_failure_stage = "seller_challenge"
+                call_user_message = "Network timeout before payment challenge."
                 error_msg = f"Network timeout before payment challenge: {str(te)}"
+                logger.error("Call %s network timeout before payment challenge: %s", call_id, str(te))
         except Exception as e:
             if payment_dispatched and not paid:
                 uncertain_payment = True
+                call_error_code = call_error_code or "SETTLEMENT_PENDING_RECONCILIATION"
+                call_failure_stage = call_failure_stage or "seller_execution"
+                call_user_message = call_user_message or "Unexpected exception after payment dispatch."
                 error_msg = f"Exception after payment dispatched: {str(e)}"
+                logger.error("Call %s exception after payment dispatch: %s", call_id, str(e), exc_info=True)
             else:
+                call_error_code = call_error_code or "GENERIC_ERROR"
+                call_failure_stage = call_failure_stage or "seller_challenge"
+                call_user_message = call_user_message or "Service invocation failed."
                 error_msg = f"HTTP call failed: {str(e)}"
+                logger.error("Call %s HTTP call failed before payment: %s", call_id, str(e))
 
         latency = (time.perf_counter() - start_time) * 1000.0
         completed_time = datetime.now(timezone.utc).isoformat()
@@ -748,6 +906,13 @@ class BuyerService:
                     latency_ms=round(latency, 2),
                     transaction_hash=tx_hash,
                     payment_reference=tx_hash,
+                    payment_attempt_id=payment_attempt_id,
+                    ledger_reference=call_id,
+                    network=service.network,
+                    is_settlement_confirmed=True,
+                    error_code="OUTPUT_VALIDATION_FAILED",
+                    failure_stage="output_validation",
+                    user_message="Service payment settled, but provider response failed output schema validation.",
                     schema_version=schema_ver,
                     output=raw_output if isinstance(raw_output, dict) else {"raw": str(raw_output)},
                     error=f"Output validation rejected: {val_err}",
@@ -781,6 +946,10 @@ class BuyerService:
                 latency_ms=round(latency, 2),
                 transaction_hash=tx_hash,
                 payment_reference=tx_hash,
+                payment_attempt_id=payment_attempt_id,
+                ledger_reference=call_id,
+                network=service.network,
+                is_settlement_confirmed=True,
                 schema_version=schema_ver,
                 output=raw_output,
                 validation_status="accepted",
@@ -813,6 +982,14 @@ class BuyerService:
                 listed_price_usdc=service.price_usdc,
                 amount_paid_usdc="0.000000",
                 latency_ms=round(latency, 2),
+                payment_attempt_id=payment_attempt_id,
+                ledger_reference=call_id,
+                network=service.network,
+                is_settlement_confirmed=False,
+                transaction_hash=None,
+                error_code=call_error_code or "SETTLEMENT_PENDING_RECONCILIATION",
+                failure_stage=call_failure_stage or "settlement_verification",
+                user_message=call_user_message or "Payment was dispatched but blockchain settlement cannot be verified. Marked for reconciliation.",
                 error=f"Uncertain payment settlement: {error_msg}",
                 validation_status="pending_reconciliation",
                 source_metadata=source_meta,
@@ -886,6 +1063,14 @@ class BuyerService:
                 listed_price_usdc=service.price_usdc,
                 amount_paid_usdc="0.000000",
                 latency_ms=round(latency, 2),
+                payment_attempt_id=payment_attempt_id if payment_attempt_id else None,
+                ledger_reference=call_id,
+                network=service.network if service else None,
+                is_settlement_confirmed=False,
+                transaction_hash=None,
+                error_code=call_error_code or ("POLICY_VIOLATION" if policy_violation else "SELLER_EXECUTION_ERROR"),
+                failure_stage=call_failure_stage or ("policy_verification" if policy_violation else "seller_execution"),
+                user_message=call_user_message or ("Service payment policy violation." if policy_violation else "Service call failed without charge."),
                 error=error_msg,
                 validation_status="not_applicable",
                 source_metadata=source_meta,

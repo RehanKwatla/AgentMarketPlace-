@@ -26,6 +26,8 @@ class PlannedCall:
     worst_case_price_units: int = 0
     selection_reason: str = ""
     allow_fallback: bool = True
+    requested_capability: str = ""
+    selection_details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

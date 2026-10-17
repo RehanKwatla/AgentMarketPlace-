@@ -26,7 +26,8 @@ class TaskRepository:
         task_id: str,
         task_prompt: str,
         budget_usdc: str,
-        status: str = "accepted"
+        status: str = "accepted",
+        idempotency_key: Optional[str] = None,
     ) -> TaskRecordModel:
         """Create and persist a task record in the database."""
         if self._simulate_failure:
@@ -40,6 +41,7 @@ class TaskRepository:
                     budget_usdc=budget_usdc,
                     total_cost_usdc="0.000000",
                     status=status,
+                    idempotency_key=idempotency_key,
                     created_at=datetime.now(timezone.utc)
                 )
                 session.add(record)
@@ -58,8 +60,10 @@ class TaskRepository:
         total_cost_usdc: Optional[str] = None,
         failure_reason: Optional[str] = None,
         final_result: Optional[str] = None,
+        failure_code: Optional[str] = None,
+        failure_stage: Optional[str] = None,
     ) -> None:
-        """Update status, final cost, failure reason, and final result for a persisted task."""
+        """Update status, final cost, failure reason, code, stage, and final result for a persisted task."""
         if self._simulate_failure:
             raise PersistenceError("Simulated database persistence failure during status update.")
 
@@ -74,6 +78,10 @@ class TaskRepository:
                         record.failure_reason = failure_reason
                     if final_result is not None:
                         record.final_result = final_result
+                    if failure_code is not None:
+                        record.failure_code = failure_code
+                    if failure_stage is not None:
+                        record.failure_stage = failure_stage
                     session.commit()
         except PersistenceError:
             raise
@@ -87,6 +95,19 @@ class TaskRepository:
                 record = session.query(TaskRecordModel).filter(TaskRecordModel.task_id == task_id).first()
                 if record:
                     # Detach / extract fields before session closes
+                    session.expunge(record)
+                return record
+        except Exception:
+            return None
+
+    def get_task_by_idempotency_key(self, idempotency_key: str) -> Optional[TaskRecordModel]:
+        """Query a task from the database by client idempotency key."""
+        if not idempotency_key:
+            return None
+        try:
+            with SessionLocal() as session:
+                record = session.query(TaskRecordModel).filter(TaskRecordModel.idempotency_key == idempotency_key).first()
+                if record:
                     session.expunge(record)
                 return record
         except Exception:

@@ -173,8 +173,15 @@ class ExplanationGenerator:
             ))
 
             # Service selection reason using actual factors without fabricating reputation
+            p_call = next((p for p in (planned_calls or []) if getattr(p, "step_id", None) == c.step_id or getattr(p, "service_id", None) == c.service_id), None)
+            p_sel_details = getattr(p_call, "selection_details", {}) if p_call else {}
+            p_cap = getattr(p_call, "requested_capability", None) or getattr(p_call, "capability", None) or category_str
+            p_reason = getattr(p_call, "selection_reason", None)
+
             svc_record = self.registry.get_service(c.service_id)
-            if svc_record and getattr(svc_record, "reputation", None) and svc_record.reputation.total_calls > 0:
+            if p_reason:
+                sel_reason = p_reason
+            elif svc_record and getattr(svc_record, "reputation", None) and svc_record.reputation.total_calls > 0:
                 rep = svc_record.reputation
                 rep_score = rep.reputation_score
                 lat_ms = rep.median_latency_ms
@@ -184,8 +191,6 @@ class ExplanationGenerator:
                     f"Median latency: {lat_ms:.0f}ms; Listed price: {c.listed_price_usdc} USDC."
                 )
             else:
-                rep_score = None
-                lat_ms = None
                 sel_reason = (
                     f"Selected for {category_str} capability matching task intent. "
                     f"Listed price: {c.listed_price_usdc} USDC; No prior reputation history in ledger."
@@ -197,13 +202,21 @@ class ExplanationGenerator:
                 reason=sel_reason,
                 listed_price_usdc=c.listed_price_usdc,
                 amount_paid_usdc=call_verified_paid_str,
-                reputation_score=rep_score,
-                median_latency_ms=lat_ms,
-                relevance=1.0
+                reputation_score=getattr(svc_record.reputation, "reputation_score", None) if (svc_record and getattr(svc_record, "reputation", None)) else None,
+                median_latency_ms=getattr(svc_record.reputation, "median_latency_ms", None) if (svc_record and getattr(svc_record, "reputation", None)) else None,
+                relevance=1.0,
+                requested_capability=p_sel_details.get("requested_capability") or p_cap,
+                selected_service=c.service_id,
+                price_used_usdc=c.listed_price_usdc,
+                price_used_atomic=usdc_to_base_units(c.listed_price_usdc),
+                budget_compatible=True,
+                budget_limit_usdc=budget_usdc,
+                evaluated_alternatives=p_sel_details.get("evaluated_alternatives", []),
             ))
 
         # 3. Budget & Spending Summary Calculation (Atomic integer math)
         remaining_units = max(0, budget_units - verified_spent_units - uncertain_pending_units)
+        # Unspent budget is released back to buyer balance
         refunded_units = remaining_units
         reserved_units = uncertain_pending_units
 

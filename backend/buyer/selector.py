@@ -299,6 +299,8 @@ class ServiceSelector:
         )
 
         eligible: List[ServiceRecord] = []
+        candidate_evaluations: List[Dict[str, Any]] = []
+
         for candidate in res.items:
             if candidate.service_id in exclude:
                 continue
@@ -316,15 +318,57 @@ class ServiceSelector:
             )
             if is_ok:
                 eligible.append(candidate)
+                candidate_evaluations.append({
+                    "service_id": candidate.service_id,
+                    "price_atomic": candidate.price_atomic,
+                    "price_usdc": candidate.price_usdc,
+                    "is_eligible": True,
+                    "status": "eligible",
+                })
+            else:
+                candidate_evaluations.append({
+                    "service_id": candidate.service_id,
+                    "price_atomic": candidate.price_atomic,
+                    "price_usdc": candidate.price_usdc,
+                    "is_eligible": False,
+                    "rejection_reason": reason,
+                    "status": "ineligible",
+                })
 
         if not eligible:
             return None, [], f"No eligible services found for category '{category}' within budget {max_budget_units} units."
 
         ranked = self.rank_candidates(eligible, task_intent=task_intent)
-        primary_record, _, primary_reason = ranked[0]
+        primary_record, _, rank_reason = ranked[0]
         fallbacks = [r[0] for r in ranked[1:]]
 
-        return primary_record, fallbacks, primary_reason
+        # Build Person A Phase 3 Explainable Service Selection data without fabricating scores
+        from backend.shared.constants import base_units_to_usdc
+        cap_label = requested_capability or (category.value if isinstance(category, ServiceCategory) else str(category))
+        evaluated_alts = [c for c in candidate_evaluations if c["service_id"] != primary_record.service_id]
+        alts_summary = ", ".join(f"{a['service_id']} ({a['price_usdc']} USDC)" for a in evaluated_alts) if evaluated_alts else "None evaluated"
+        factual_reason = (
+            f"Selected '{primary_record.service_id}' for capability '{cap_label}'. "
+            f"Price {primary_record.price_usdc} USDC ({primary_record.price_atomic} base units) is within budget limit of {base_units_to_usdc(max_budget_units)} USDC. "
+            f"Evaluated alternatives: {alts_summary}."
+        )
+
+        try:
+            setattr(primary_record, "_selection_details", {
+                "requested_capability": cap_label,
+                "selected_service": primary_record.service_id,
+                "price_used_atomic": primary_record.price_atomic,
+                "price_used_usdc": primary_record.price_usdc,
+                "budget_compatible": True,
+                "budget_limit_atomic": max_budget_units,
+                "budget_limit_usdc": base_units_to_usdc(max_budget_units),
+                "evaluated_alternatives": evaluated_alts,
+                "concise_rationale": factual_reason,
+            })
+        except Exception:
+            pass
+
+        return primary_record, fallbacks, factual_reason
 
     def select_best_service(
         self,
