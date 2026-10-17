@@ -4,7 +4,12 @@ export type LedgerStatus =
   | 'paid' 
   | 'paid output rejected' 
   | 'refused' 
-  | 'failed and not charged';
+  | 'failed and not charged'
+  | 'simulated'
+  | 'pending'
+  | 'pending reconciliation'
+  | 'verified on-chain'
+  | 'verified facilitator receipt';
 
 export interface ServiceReputation {
   service_id: string;
@@ -292,3 +297,14 @@ export interface PaymentDashboardData {
   }>;
 }
 
+export const isValidBaseSepoliaTxHash = (hash: string | null | undefined): boolean => {
+  if (!hash) return false;
+  // Strict 66-character hex string starting with 0x (Base Sepolia transaction hash)
+  // Synthetics like rec_auth_..., simulated_..., mock_... evaluate to false
+  return /^0x[0-9a-fA-F]{64}$/.test(hash.trim());
+};
+
+export const getBaseSepoliaExplorerUrl = (hash: string | null | undefined): string | null => {
+  if (!isValidBaseSepoliaTxHash(hash)) return null;
+  return `https://sepolia.basescan.org/tx/${hash?.trim()}`;
+};

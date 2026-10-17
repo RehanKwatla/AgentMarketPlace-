@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LedgerRecord } from '../types';
+import { LedgerRecord, getBaseSepoliaExplorerUrl } from '../types';
 import { StatusBadge } from './ui/StatusBadge';
 import { ExternalLink, Copy, Check, Clock, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { mapPaymentStatus } from '../utils/statusMapping';
@@ -25,8 +25,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   };
 
   const getExplorerUrl = (txHash: string | null | undefined) => {
-    if (!txHash || !txHash.startsWith('0x') || txHash.length < 42) return null;
-    return `https://sepolia.basescan.org/tx/${txHash}`;
+    return getBaseSepoliaExplorerUrl(txHash);
   };
 
   return (
@@ -184,6 +183,11 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                             <span>{record.tx_hash.slice(0, 8)}...{record.tx_hash.slice(-4)}</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
+                        ) : record.tx_hash ? (
+                          <span className="text-[#A3A3A3] font-mono text-[11px]" title={record.tx_hash}>
+                            {record.tx_hash.startsWith('rec_') ? 'Receipt: ' : 'Proof: '}
+                            {record.tx_hash.slice(0, 8)}...
+                          </span>
                         ) : (
                           <span className="text-[11px] text-[#82786F] truncate max-w-[130px] block" title={record.tx_hash}>
                             {record.tx_hash.slice(0, 14)}...

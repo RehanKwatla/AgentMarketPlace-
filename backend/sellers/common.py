@@ -124,12 +124,22 @@ class BaseSellerService(Generic[TInput, TOutput], ABC):
         input_model: Type[TInput],
         output_model: Type[TOutput],
         default_timeout_seconds: float = 10.0,
+        max_concurrency: int = 50,
     ):
         self.service_id = service_id
         self.name = name
         self.input_model = input_model
         self.output_model = output_model
         self.default_timeout_seconds = default_timeout_seconds
+        self.max_concurrency = max_concurrency
+        self._semaphore: Optional[asyncio.Semaphore] = None
+
+    @property
+    def semaphore(self) -> asyncio.Semaphore:
+        """Lazily initialize asyncio Semaphore on active running loop."""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self.max_concurrency)
+        return self._semaphore
 
     @abstractmethod
     async def _execute_business_logic(
@@ -180,13 +190,14 @@ class BaseSellerService(Generic[TInput, TOutput], ABC):
                     service_id=self.service_id
                 ) from val_err
 
-        # 2. Bounded Execution with Timeout
+        # 2. Bounded Execution with Concurrency Limit and Timeout
         timed_out = False
         try:
-            raw_output = await asyncio.wait_for(
-                self._execute_business_logic(validated_input, ctx),
-                timeout=effective_timeout
-            )
+            async with self.semaphore:
+                raw_output = await asyncio.wait_for(
+                    self._execute_business_logic(validated_input, ctx),
+                    timeout=effective_timeout
+                )
         except asyncio.TimeoutError as timeout_err:
             timed_out = True
             duration_ms = (time.perf_counter() - start_time) * 1000.0

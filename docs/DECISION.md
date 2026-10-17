@@ -278,7 +278,6 @@ In agent marketplaces, users and auditors require transparent explanations of ev
 - **Fact-Based Service Selection Explanations:** Explanations cite actual registry reputation scores and median latencies when verified call history exists; when a service has no history, the narrative explicitly states `"No prior reputation history in ledger"` without hallucinating scores.
 ---
 
-
 ## Decision 13: Dual Package Namespace Compatibility (`backend/payments/` & `backend/app/payments/`)
 
 ### 1. Context & Problem

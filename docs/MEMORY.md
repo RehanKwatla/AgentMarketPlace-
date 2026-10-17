@@ -86,6 +86,7 @@
 - Initialized local Git repository on branch `main`.
 - Created commit `7981e59`.
 - Created local branches: `feature/payments`, `feature/sellers`, `feature/buyer-registry`, `feature/dashboard-ledger`.
+- Added remote `https://github.com/RehanKwatla/AgentMarketPlace-.git`.
 - Pushed `main` and all 4 feature branches to GitHub successfully.
 - Pushed `main` (`98ae75d`), fast-forwarded remote feature branches, and pulled upstream Member 3 documentation commit (`c4fe0e7`).
 - Created dedicated branch `M1` tracking `origin/M1`.
@@ -246,9 +247,18 @@
   - Created `backend/tests/test_sellers_payment_integration.py` with 17 dedicated tests covering challenges, fail-closed boundaries, SSRF blocks, input bounds, verbatim proof attachment, context/idempotency forwarding, terms mismatches, and full buyer-seller-ledger handshake.
   - Verified zero modifications to payment-owned files (`backend/payments/`).
 
-### Step 28 (Integration): Clean Merge of M2 (Sellers) with M1 (Payments) and M3 (Buyer & Registry)
-- Merged Member 2 branch `M2` into unified branch `M1` containing Member 1's payment engine and Member 3's buyer/registry subsystems.
+### Step 28 (Member 2): Phase 2 Provider Architecture & Advanced SSRF DNS Defense
+- Implemented modular provider architecture under `backend/sellers/providers/`:
+  - `inference/`: `ConfiguredProvider` and `fake.py` supporting Gemini and Groq LLMs with timeout bounding and fallback.
+  - `scraping/`: `fetcher.py`, `parser.py`, `safety.py`, and `transport.py` featuring DNS-rebinding protection and pre-execution safety validation.
+- Authored comprehensive test suite in `backend/tests/test_sellers_providers.py`.
+
+### Step 29 (Integration): Clean Merge of M1 (Payments), M2 (Sellers), M3 (Buyer & Registry), and M4 (Ledger & Dashboard)
+- Merged branches `origin/M1`, `origin/M2`, and `origin/M3` into unified active codebase.
+- Replaced frontend with Agentica frontend system, passing all 56 vitest unit and component tests.
 - Resolved documentation renames and merged architecture records in `docs/DECISION.md`, `docs/FLOW.md`, and `docs/MEMORY.md`.
-- Confirmed full interoperability between Member 1's turnkey `verify_seller_payment` / `SellerPaymentVerifier` and Member 2's seller routes.
-- Executed full test suite across M1, M2, and M3 with 100% pass rate.
+- Harmonized `backend/buyer/buyer_agent.py` to seamlessly support both Member 3 DAG orchestration (`plan.steps`) and Member 1 single-call workflows (`plan.calls`).
+- Harmonized `backend/sellers/routes.py` with turnkey `verify_seller_payment` and `SellerPaymentVerifierInterface` fallback.
+- Unified `backend/payments/settlement.py` with 6-point on-chain verification, live facilitator client support, and durable persistence.
+- Verified all endpoints and executed full backend test suite with 100% pass rate.
 

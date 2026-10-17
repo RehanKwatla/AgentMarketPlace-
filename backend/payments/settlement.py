@@ -97,6 +97,7 @@ class SettlementVerifier:
         self.rpc_url = rpc_url or settings.base_sepolia_rpc_url
         import os
         self.network = getattr(settings, "blockchain_network", NETWORK_BASE_SEPOLIA)
+        self.facilitator_url = facilitator_url or settings.x402_facilitator_url
         if test_mode is not None:
             self.test_mode = test_mode
         else:
@@ -245,7 +246,7 @@ class SettlementVerifier:
 
     async def _verify_facilitator_receipt(self, receipt_id: str) -> Tuple[bool, str]:
         """Verify receipt with configured x402 facilitator."""
-        if self.test_mode or receipt_id.startswith("rec_") or receipt_id.startswith("receipt_"):
+        if self.test_mode:
             if receipt_id and len(receipt_id) >= 6:
                 return True, receipt_id
             return False, receipt_id
@@ -295,6 +296,8 @@ class SettlementVerifier:
         normalized_pay_to = expected_pay_to.lower()
         normalized_sender = expected_sender.lower() if expected_sender else None
 
+        matching_events: List[SettlementEvidence] = []
+        mismatch_error = None
         for log in logs:
             log_address = str(log.get("address", "")).lower()
             if log_address != normalized_token:
@@ -310,8 +313,8 @@ class SettlementVerifier:
                 continue
 
             # Decode from (topic1) and to (topic2)
-            raw_sender = topics[1]
-            raw_recipient = topics[2]
+            raw_sender = str(topics[1])
+            raw_recipient = str(topics[2])
             sender_addr = "0x" + raw_sender[-40:].lower()
             recipient_addr = "0x" + raw_recipient[-40:].lower()
 
@@ -325,18 +328,23 @@ class SettlementVerifier:
 
             # Decode transfer value from data
             data_field = log.get("data", "0x0")
-            if isinstance(data_field, str):
-                transfer_amount = int(data_field, 16)
-            elif isinstance(data_field, bytes):
-                transfer_amount = int.from_bytes(data_field, "big")
-            else:
-                transfer_amount = int(data_field)
+            try:
+                if isinstance(data_field, str):
+                    transfer_amount = int(data_field, 16)
+                elif isinstance(data_field, bytes):
+                    transfer_amount = int.from_bytes(data_field, "big")
+                else:
+                    transfer_amount = int(data_field)
+            except (ValueError, TypeError) as val_err:
+                logger.debug(f"Malformed transfer data field '{data_field}': {val_err}")
+                continue
 
             if transfer_amount != expected_amount_units:
-                raise SettlementVerificationError(
+                mismatch_error = (
                     f"ERC-20 Transfer amount mismatch: expected {expected_amount_units} base units, "
                     f"found {transfer_amount} in event log."
                 )
+                continue
 
             # Valid matching event found
             block_num = None
@@ -349,18 +357,33 @@ class SettlementVerifier:
                 raw_idx = log["logIndex"]
                 log_idx = int(raw_idx, 16) if isinstance(raw_idx, str) and raw_idx.startswith("0x") else int(raw_idx)
 
-            return SettlementEvidence(
-                network=NETWORK_BASE_SEPOLIA,
-                tx_hash=log.get("transactionHash"),
-                token_address=log_address,
-                recipient_address=recipient_addr,
-                amount_base_units=transfer_amount,
-                settled_at=datetime.now(timezone.utc),
-                verified=True,
-                sender_address=sender_addr,
-                block_number=block_num,
-                log_index=log_idx,
+            matching_events.append(
+                SettlementEvidence(
+                    network=NETWORK_BASE_SEPOLIA,
+                    tx_hash=log.get("transactionHash"),
+                    token_address=log_address,
+                    recipient_address=recipient_addr,
+                    amount_base_units=transfer_amount,
+                    settled_at=datetime.now(timezone.utc),
+                    verified=True,
+                    sender_address=sender_addr,
+                    block_number=block_num,
+                    log_index=log_idx,
+                )
             )
+
+        # Single-payment policy: reject multiple qualifying transfers to the same seller as ambiguous
+        if len(matching_events) > 1:
+            raise SettlementVerificationError(
+                f"Ambiguous settlement rejected: receipt contains {len(matching_events)} qualifying "
+                f"ERC-20 Transfer events to recipient {expected_pay_to} under single-payment policy."
+            )
+
+        if len(matching_events) == 1:
+            return matching_events[0]
+
+        if mismatch_error:
+            raise SettlementVerificationError(mismatch_error)
 
         raise SettlementVerificationError(
             f"No matching ERC-20 Transfer event log found for token {expected_token}, "

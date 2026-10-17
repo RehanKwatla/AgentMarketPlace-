@@ -398,3 +398,223 @@ async def test_payment_service_live_mode_unverified_proof_transitions_to_suspens
         assert budget.reserved_budget == 2000
     finally:
         catalog._services.pop(svc_def.service_id, None)
+
+
+@pytest.mark.asyncio
+async def test_full_settlement_multi_log_receipt_succeeds_when_valid_transfer_is_present():
+    """Verify that a receipt with multiple logs (unrelated events + fee + valid transfer) extracts the valid payment."""
+    verifier = SettlementVerifier(test_mode=False)
+    tx_hash = "0x" + "7" * 64
+    seller_pay_to = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+    buyer_addr = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+    unrelated_addr = "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E"
+
+    mock_receipt = {
+        "status": "0x1",
+        "transactionHash": tx_hash,
+        "logs": [
+            # Log 0: Unrelated transfer to a third party
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=unrelated_addr,
+                amount_base_units=5000,
+                tx_hash=tx_hash,
+            ),
+            # Log 1: Partial transfer / gas rebate to seller with wrong amount (100 units)
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=100,
+                tx_hash=tx_hash,
+            ),
+            # Log 2: Exact matching microservice payment transfer (2000 units)
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=2000,
+                tx_hash=tx_hash,
+            ),
+        ]
+    }
+
+    with patch.object(verifier, "_verify_onchain_tx", new=AsyncMock(return_value=(True, mock_receipt))):
+        receipt = await verifier.verify_full_settlement(
+            proof_header=tx_hash,
+            expected_network=NETWORK_BASE_SEPOLIA,
+            expected_token=USDC_BASE_SEPOLIA,
+            expected_pay_to=seller_pay_to,
+            expected_amount_units=2000,
+            expected_sender=buyer_addr,
+        )
+
+    assert receipt.tx_hash == tx_hash
+    assert receipt.settled_amount_units == 2000
+
+
+@pytest.mark.asyncio
+async def test_full_settlement_rejection_on_malformed_topics_and_data():
+    """Verify settlement rejects safely when receipt logs have malformed topics or invalid hex data."""
+    verifier = SettlementVerifier(test_mode=False)
+    tx_hash = "0x" + "8" * 64
+    seller_pay_to = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+
+    # Log with truncated topics (< 3 topics) and invalid data
+    mock_receipt = {
+        "status": "0x1",
+        "transactionHash": tx_hash,
+        "logs": [
+            {
+                "address": USDC_BASE_SEPOLIA.lower(),
+                "topics": [ERC20_TRANSFER_TOPIC.lower()],  # Missing from and to topics!
+                "data": "0xinvalid_hex_string_xyz",
+            }
+        ]
+    }
+
+    with patch.object(verifier, "_verify_onchain_tx", new=AsyncMock(return_value=(True, mock_receipt))):
+        with pytest.raises(SettlementVerificationError) as exc_info:
+            await verifier.verify_full_settlement(
+                proof_header=tx_hash,
+                expected_network=NETWORK_BASE_SEPOLIA,
+                expected_token=USDC_BASE_SEPOLIA,
+                expected_pay_to=seller_pay_to,
+                expected_amount_units=2000,
+            )
+
+    assert "No matching ERC-20 Transfer event log found" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_full_settlement_fragmented_transfers_rejected_fails_closed():
+    """Verify fragmented transfers summing to target price are rejected (exact atomic price policy)."""
+    verifier = SettlementVerifier(test_mode=False)
+    tx_hash = "0x" + "9" * 64
+    seller_pay_to = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+    buyer_addr = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+
+    # Two fragmented transfers of 1,000 units each (sum = 2,000 units)
+    mock_receipt = {
+        "status": "0x1",
+        "transactionHash": tx_hash,
+        "logs": [
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=1000,
+                tx_hash=tx_hash,
+            ),
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=1000,
+                tx_hash=tx_hash,
+            ),
+        ]
+    }
+
+    with patch.object(verifier, "_verify_onchain_tx", new=AsyncMock(return_value=(True, mock_receipt))):
+        with pytest.raises(SettlementVerificationError) as exc_info:
+            await verifier.verify_full_settlement(
+                proof_header=tx_hash,
+                expected_network=NETWORK_BASE_SEPOLIA,
+                expected_token=USDC_BASE_SEPOLIA,
+                expected_pay_to=seller_pay_to,
+                expected_amount_units=2000,
+            )
+
+    assert "ERC-20 Transfer amount mismatch: expected 2000 base units, found 1000" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_full_settlement_two_qualifying_transfers_rejected_as_ambiguous():
+    """Verify that if a receipt contains multiple qualifying transfers to the same recipient, it is rejected as ambiguous."""
+    verifier = SettlementVerifier(test_mode=False)
+    tx_hash = "0x" + "a" * 64
+    seller_pay_to = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+    buyer_addr = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+
+    mock_receipt = {
+        "status": "0x1",
+        "transactionHash": tx_hash,
+        "logs": [
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=2000,
+                tx_hash=tx_hash,
+            ),
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=2000,
+                tx_hash=tx_hash,
+            ),
+        ]
+    }
+
+    with patch.object(verifier, "_verify_onchain_tx", new=AsyncMock(return_value=(True, mock_receipt))):
+        with pytest.raises(SettlementVerificationError) as exc_info:
+            await verifier.verify_full_settlement(
+                proof_header=tx_hash,
+                expected_network=NETWORK_BASE_SEPOLIA,
+                expected_token=USDC_BASE_SEPOLIA,
+                expected_pay_to=seller_pay_to,
+                expected_amount_units=2000,
+            )
+
+    assert "Ambiguous settlement rejected: receipt contains 2 qualifying ERC-20 Transfer events" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_full_settlement_malformed_log_before_valid_transfer_succeeds():
+    """Verify that a malformed log preceding a valid transfer log is safely ignored and settlement succeeds."""
+    verifier = SettlementVerifier(test_mode=False)
+    tx_hash = "0x" + "b" * 64
+    seller_pay_to = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+    buyer_addr = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+
+    mock_receipt = {
+        "status": "0x1",
+        "transactionHash": tx_hash,
+        "logs": [
+            # Corrupted / malformed log with invalid data field
+            {
+                "address": USDC_BASE_SEPOLIA.lower(),
+                "topics": [
+                    ERC20_TRANSFER_TOPIC.lower(),
+                    "0x" + "0" * 24 + buyer_addr[2:].lower(),
+                    "0x" + "0" * 24 + seller_pay_to[2:].lower(),
+                ],
+                "data": "not_hex_data_corrupted",
+            },
+            # Valid qualifying transfer log
+            _build_mock_transfer_log(
+                token_address=USDC_BASE_SEPOLIA,
+                from_address=buyer_addr,
+                to_address=seller_pay_to,
+                amount_base_units=2000,
+                tx_hash=tx_hash,
+            ),
+        ]
+    }
+
+    with patch.object(verifier, "_verify_onchain_tx", new=AsyncMock(return_value=(True, mock_receipt))):
+        receipt = await verifier.verify_full_settlement(
+            proof_header=tx_hash,
+            expected_network=NETWORK_BASE_SEPOLIA,
+            expected_token=USDC_BASE_SEPOLIA,
+            expected_pay_to=seller_pay_to,
+            expected_amount_units=2000,
+            expected_sender=buyer_addr,
+        )
+
+    assert receipt.tx_hash == tx_hash
+    assert receipt.settled_amount_units == 2000
+

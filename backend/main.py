@@ -42,20 +42,21 @@ app = FastAPI(
 
 from backend.payments.middleware import X402ProtocolMiddleware
 
-# Parse configured CORS origins from environment
-cors_origins_raw = settings.cors_allowed_origins
-allowed_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
-if not allowed_origins:
-    allowed_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
-
-# In production, enforce strict allowlist and disallow wildcard '*'
-if settings.environment.lower() == "production" and "*" in allowed_origins:
-    allowed_origins = [o for o in allowed_origins if o != "*"]
-
 # Cross-Origin Resource Sharing (CORS) for Frontend Dashboard
+raw_cors = getattr(settings, "cors_allowed_origins", "") or ""
+configured_origins = [o.strip() for o in raw_cors.split(",") if o.strip()]
+
+if settings.environment.lower() == "production":
+    cors_origins = [o for o in configured_origins if o != "*"] if configured_origins else ["http://localhost:5173"]
+else:
+    cors_origins = list(configured_origins)
+    for dev_origin in ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"]:
+        if dev_origin not in cors_origins:
+            cors_origins.append(dev_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LedgerRecord } from '../types';
+import { LedgerRecord, getBaseSepoliaExplorerUrl } from '../types';
 import { X, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface LedgerDetailModalProps {
@@ -46,7 +46,7 @@ export const LedgerDetailModal: React.FC<LedgerDetailModalProps> = ({ record, on
   };
 
   const statusInfo = getStatusExplanation(record.status);
-  const explorerUrl = record.tx_hash ? `https://sepolia.basescan.org/tx/${record.tx_hash}` : null;
+  const explorerUrl = getBaseSepoliaExplorerUrl(record.tx_hash);
 
   return (
     <div 
@@ -132,7 +132,7 @@ export const LedgerDetailModal: React.FC<LedgerDetailModalProps> = ({ record, on
 
             {explorerUrl && (
               <div className="pt-2 border-t border-[#CFC7BB] flex items-center justify-between">
-                <span className="text-[#82786F]">On-Chain Transaction:</span>
+                <span className="text-[#82786F]">On-Chain Transaction (BaseScan):</span>
                 <a
                   href={explorerUrl}
                   target="_blank"
@@ -143,7 +143,14 @@ export const LedgerDetailModal: React.FC<LedgerDetailModalProps> = ({ record, on
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-            )}
+            ) : record.tx_hash ? (
+              <div className="pt-2 border-t border-[rgba(255, 255, 255,0.14)] flex items-center justify-between">
+                <span className="text-[#A3A3A3]">
+                  {record.tx_hash.startsWith('rec_') ? 'Facilitator Receipt ID:' : 'Settlement Proof:'}
+                </span>
+                <span className="font-mono text-[11px] text-[#FAFAFA] truncate max-w-[200px]">{record.tx_hash}</span>
+              </div>
+            ) : null}
           </div>
 
           {record.error_reason && (

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { TaskResponse } from '../types';
+import { TaskResponse, getBaseSepoliaExplorerUrl } from '../types';
 import { StatusBadge } from './ReputationBadge';
 import { 
   AlertCircle, 
@@ -172,16 +172,26 @@ export const TaskResultsView: React.FC<TaskResultsViewProps> = ({
                     <div className="p-3.5 border-t border-[#CFC7BB]/60 bg-[#F7F4EE] space-y-3">
                       {exec.tx_hash && (
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-[#82786F]">Base Sepolia Tx Hash:</span>
-                          <a
-                            href={`https://sepolia.basescan.org/tx/${exec.tx_hash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[#7D292D] hover:underline font-medium"
-                          >
-                            <span>{exec.tx_hash}</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
+                          <span className="text-[#82786F]">
+                            {getBaseSepoliaExplorerUrl(exec.tx_hash)
+                              ? 'Base Sepolia Tx Hash:'
+                              : exec.tx_hash.startsWith('rec_')
+                              ? 'Facilitator Receipt ID:'
+                              : 'Settlement Proof / ID:'}
+                          </span>
+                          {getBaseSepoliaExplorerUrl(exec.tx_hash) ? (
+                            <a
+                              href={getBaseSepoliaExplorerUrl(exec.tx_hash)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[#7D292D] hover:underline font-medium"
+                            >
+                              <span>{exec.tx_hash}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="font-mono text-[#241B19]">{exec.tx_hash}</span>
+                          )}
                         </div>
                       )}
 

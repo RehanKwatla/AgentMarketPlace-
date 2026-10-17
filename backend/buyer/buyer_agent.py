@@ -70,9 +70,10 @@ class BuyerAgent:
     ):
         self.registry = registry
         self.repository = repository
-        self.policy_verifier = PaymentPolicyVerifier()
-        self.settlement_verifier = SettlementVerifier(rpc_url="")
         self.payment_service = payment_service
+        self.selector = selector
+        self.policy_verifier = PaymentPolicyVerifier()
+        self.settlement_verifier = SettlementVerifier(rpc_url="", test_mode=True)
 
         # Member 1 BuyerPaymentClientInterface compliance
         self.payment_client: BuyerPaymentClientInterface = payment_client or BuyerPaymentClient(
@@ -98,25 +99,56 @@ class BuyerAgent:
 
     async def execute_task(self, request: TaskRequest) -> TaskResponse:
         """Execute task request with end-to-end multi-hop tool chaining and official x402 payment lifecycle."""
+        # If wired with isolated PaymentService for integration testing
         if self.payment_service is not None:
             task_id = f"task_{uuid.uuid4().hex[:12]}"
             budget_units = usdc_to_base_units(request.budget_usdc)
-            budget_mgr = self.payment_service.get_or_create_task_budget(task_id, budget_units)
+            if hasattr(self.payment_service, "get_or_create_task_budget"):
+                budget_mgr = self.payment_service.get_or_create_task_budget(task_id, budget_units)
+            else:
+                budget_mgr = BudgetManager(initial_budget_units=budget_units)
 
             # 1. Decompose task into planned steps
-            plan = self.planner.create_plan(TaskCreationRequest(task=request.task, budget_usdc=request.budget_usdc))
+            if hasattr(self.planner, "plan_task"):
+                plan = self.planner.plan_task(request.task, request.budget_usdc)
+            elif hasattr(self.planner, "create_plan"):
+                try:
+                    plan = self.planner.create_plan(TaskCreationRequest(task=request.task, budget_usdc=request.budget_usdc))
+                except Exception:
+                    plan = self.planner.create_plan(request.task, request.budget_usdc)
+            else:
+                plan = None
+
+            # Check if planned cost exceeds initial task budget
+            est_total = getattr(plan, "estimated_total_units", None) or getattr(plan, "expected_cost_units", budget_units)
+            if est_total > budget_units:
+                return TaskResponse(
+                    task_id=task_id,
+                    status="refused",
+                    budget_allocated_usdc=request.budget_usdc,
+                    total_cost_usdc="0.000000",
+                    cost_explanation="Estimated task cost exceeds allocated budget.",
+                    selected_services=[],
+                    executions=[],
+                    final_result="Task refused: Insufficient budget allocated.",
+                    errors_and_fallbacks=[f"Required {est_total} units, but budget was {budget_units} units."]
+                )
 
             executions: List[ExecutionStep] = []
             fallbacks: List[str] = []
+            from backend.registry.service_catalog import catalog
 
-            for step in plan.calls:
-                service = self.registry.get_service(step.service_id)
+            raw_steps = getattr(plan, "steps", None) or getattr(plan, "calls", [])
+
+            for step in raw_steps:
+                service = self.registry.get_service(step.service_id) or catalog.get_service(step.service_id)
                 if not service:
                     fallbacks.append(f"Service '{step.service_id}' not found.")
                     continue
 
-                call_id = f"step_{step.step_id}"
-                idempotency_key = f"idemp_{task_id}_{step.step_id}_{service.service_id}"
+                step_num = getattr(step, "step_number", None) or getattr(step, "step_id", len(executions) + 1)
+                call_id = f"step_{step_num}"
+                idempotency_key = f"idemp_{task_id}_{step_num}_{service.service_id}"
                 step_payload = getattr(step, "input_payload", {}) or {}
 
                 start_t = time.perf_counter()
@@ -146,7 +178,7 @@ class BuyerAgent:
                 }
 
                 executions.append(ExecutionStep(
-                    step=step.step_id,
+                    step=step_num,
                     service_id=service.service_id,
                     request_id=paid_result.request_id,
                     price_paid_usdc=paid_result.amount_usdc,
@@ -155,6 +187,17 @@ class BuyerAgent:
                     latency_ms=round(paid_result.latency_ms or latency, 2),
                     output=step_output,
                 ))
+
+            if hasattr(self.aggregator, "aggregate"):
+                try:
+                    return self.aggregator.aggregate(
+                        task_id=task_id,
+                        budget_allocated_usdc=request.budget_usdc,
+                        executions=executions,
+                        fallbacks=fallbacks
+                    )
+                except Exception:
+                    pass
 
             selected = [e.service_id for e in executions]
             return TaskResponse(

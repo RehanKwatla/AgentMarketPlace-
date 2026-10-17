@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     frontend_port: int = Field(default=5173, alias="FRONTEND_PORT")
     vite_api_base_url: str = Field(default="http://localhost:8000", alias="VITE_API_BASE_URL")
     cors_allowed_origins: str = Field(
-        default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
+        default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000",
         alias="CORS_ALLOWED_ORIGINS"
     )
 

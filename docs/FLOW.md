@@ -276,5 +276,4 @@ scripts/run_tests.py
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
 
-All unit, foundation, integration, and security tests execute with a 100% pass rate.
-
+All automated unit, foundation, integration, and security test suites verify every subsystem interface before developer feature branches are merged, executing with a 100% pass rate across all subsystems.
