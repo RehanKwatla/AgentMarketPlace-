@@ -107,7 +107,7 @@ describe('20-Point Checklist Quality Audit Tests', () => {
     );
 
     // 1. Logo clickable with aria-label
-    const logoLink = screen.getByRole('link', { name: /Agentica Economy - Return to Dashboard/i });
+    const logoLink = screen.getByRole('link', { name: /Agentica.*Return to Dashboard/i });
     expect(logoLink).toBeInTheDocument();
     expect(logoLink).toHaveAttribute('href', '/dashboard');
 

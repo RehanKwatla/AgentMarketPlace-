@@ -67,7 +67,7 @@ export const Header: React.FC = () => {
         {/* 1. Left: Brand / Logo - Accessible & Clickable */}
         <NavLink 
           to="/dashboard"
-          aria-label="Agentica Economy - Return to Dashboard"
+          aria-label="Agentica - Return to Dashboard"
           className="flex items-center gap-2.5 select-none shrink-0 focus-visible:ring-2 focus-visible:ring-[#7D292D] outline-none rounded-lg p-0.5"
           onClick={() => setMobileMenuOpen(false)}
         >
@@ -77,7 +77,7 @@ export const Header: React.FC = () => {
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="font-serif font-bold text-base tracking-tight text-[#241B19]">
-                Agentica <span className="text-[#7D292D]">Economy</span>
+                Agentica
               </span>
               <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#DED8CD] text-[#241B19] border border-[#CFC7BB]">
                 x402 v2
