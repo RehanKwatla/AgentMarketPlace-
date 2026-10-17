@@ -723,15 +723,21 @@ class SellerPaymentVerifier(SellerPaymentVerifierInterface):
                 raise SettlementVerificationError(
                     f"Token mismatch: {auth.get('token')} != {requirement.token}"
                 )
-            recipient = auth.get("payTo") or auth.get("to")
-            if recipient and recipient.lower() != requirement.payTo.lower():
+            if auth.get("to") and auth.get("to").lower() != requirement.payTo.lower():
                 raise SettlementVerificationError(
-                    f"Recipient mismatch: {recipient} != {requirement.payTo}"
+                    f"Recipient mismatch: {auth.get('to')} != {requirement.payTo}"
                 )
-            amount_val = auth.get("amount") if auth.get("amount") is not None else auth.get("value")
-            if amount_val is not None and str(amount_val) != str(requirement.amount):
+            if auth.get("payTo") and auth.get("payTo").lower() != requirement.payTo.lower():
                 raise SettlementVerificationError(
-                    f"Amount mismatch: {amount_val} != {requirement.amount}"
+                    f"Recipient mismatch: {auth.get('payTo')} != {requirement.payTo}"
+                )
+            if auth.get("value") is not None and str(auth.get("value")) != str(requirement.amount):
+                raise SettlementVerificationError(
+                    f"Amount mismatch: {auth.get('value')} != {requirement.amount}"
+                )
+            if auth.get("amount") is not None and str(auth.get("amount")) != str(requirement.amount):
+                raise SettlementVerificationError(
+                    f"Amount mismatch: {auth.get('amount')} != {requirement.amount}"
                 )
 
             # Validity window check

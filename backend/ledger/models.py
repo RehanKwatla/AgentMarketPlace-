@@ -116,7 +116,7 @@ class LedgerRepository:
                         f"Amount mismatch for request_id '{record.request_id}': "
                         f"incoming {incoming_units} units != existing {existing_units} units"
                     )
-                if existing_mem.tx_hash and record.tx_hash and existing_mem.tx_hash != record.tx_hash:
+                if existing_mem.tx_hash and record.tx_hash and existing_mem.tx_hash.startswith("0x") and record.tx_hash.startswith("0x") and existing_mem.tx_hash.lower() != record.tx_hash.lower():
                     raise LedgerInconsistencyError(
                         f"Transaction hash conflict for request_id '{record.request_id}': "
                         f"incoming '{record.tx_hash}' != existing '{existing_mem.tx_hash}'"
@@ -157,7 +157,7 @@ class LedgerRepository:
                             f"Amount mismatch for request_id '{record.request_id}': "
                             f"incoming {paid_units} units != existing {existing_db_units} units"
                         )
-                    if existing.tx_hash and record.tx_hash and existing.tx_hash != record.tx_hash:
+                    if existing.tx_hash and record.tx_hash and existing.tx_hash.startswith("0x") and record.tx_hash.startswith("0x") and existing.tx_hash.lower() != record.tx_hash.lower():
                         raise LedgerInconsistencyError(
                             f"Transaction hash conflict for request_id '{record.request_id}': "
                             f"incoming '{record.tx_hash}' != existing '{existing.tx_hash}'"
@@ -242,9 +242,8 @@ class LedgerRepository:
             except LedgerInconsistencyError:
                 raise
             except Exception as exc:
-                logger.warning(f"Database operation failed, falling back to memory cache: {exc}")
-                self._records[record.request_id] = record
-                return record
+                logger.error(f"Failed to persist ledger record {record.request_id} to durable database: {exc}")
+                raise RuntimeError(f"Durable ledger persistence failed for {record.request_id}: {exc}") from exc
             finally:
                 if db:
                     db.close()

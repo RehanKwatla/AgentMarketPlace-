@@ -91,10 +91,21 @@ class SettlementReconciler:
             # 1. Check if record already exists (Idempotency)
             existing = self.repo.get_record(payload.request_id)
             if existing:
-                if existing.service_id != payload.service_id:
+                if payload.service_id and existing.service_id != payload.service_id:
                     raise LedgerInconsistencyError(
-                        f"Inconsistent reconciliation for '{payload.request_id}': "
-                        f"incoming service '{payload.service_id}' != existing '{existing.service_id}'"
+                        f"Service ID mismatch for '{payload.request_id}': incoming service '{payload.service_id}' != existing '{existing.service_id}'"
+                    )
+                if payload.buyer_id and existing.buyer_id != payload.buyer_id:
+                    raise LedgerInconsistencyError(
+                        f"Buyer ID mismatch for '{payload.request_id}': incoming buyer '{payload.buyer_id}' != existing '{existing.buyer_id}'"
+                    )
+                if payload.amount_paid_units is not None and existing.amount_paid_units != payload.amount_paid_units:
+                    raise LedgerInconsistencyError(
+                        f"Amount mismatch for '{payload.request_id}': incoming {payload.amount_paid_units} units != existing {existing.amount_paid_units} units"
+                    )
+                if payload.tx_hash and existing.tx_hash and existing.tx_hash.lower() != payload.tx_hash.lower():
+                    raise LedgerInconsistencyError(
+                        f"Transaction hash conflict for '{payload.request_id}': incoming '{payload.tx_hash}' != existing '{existing.tx_hash}'"
                     )
 
                 if existing.status == LedgerStatus.PAID and existing.tx_hash:

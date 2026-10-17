@@ -71,8 +71,12 @@ class X402ProtocolMiddleware:
         # Reject duplicate ambiguous headers (e.g. Multiple contradictory signature headers)
         if sig_count > 1 or legacy_count > 1:
             logger.warning("Duplicate ambiguous payment headers detected in request.")
-            new_headers = [(k, v) for k, v in headers if k.lower() != b"x-402-payment-payload"]
+            new_headers = [
+                (k, v) for k, v in headers
+                if k.lower() not in (b"x-402-payment-payload", b"payment-signature", b"x-payment")
+            ]
             new_headers.append((b"x-402-payment-payload", b"DUPLICATE_AMBIGUOUS_PAYMENT_HEADERS"))
+            new_headers.append((b"payment-signature", b"DUPLICATE_AMBIGUOUS_PAYMENT_HEADERS"))
             scope = dict(scope, headers=new_headers)
             await self.app(scope, receive, send)
             return
@@ -81,7 +85,7 @@ class X402ProtocolMiddleware:
         if sig_bytes and legacy_bytes:
             try:
                 sig_str = sig_bytes.decode("utf-8").strip()
-                official_dict, _ = x402_adapter.decode_official_payload(sig_str)
+                official_dict, official_req = x402_adapter.decode_official_payload(sig_str)
                 legacy_dict = json.loads(legacy_bytes.decode("utf-8"))
 
                 off_auth = official_dict.get("authorization", {})
@@ -93,18 +97,36 @@ class X402ProtocolMiddleware:
                 leg_to = str(leg_auth.get("to") or leg_auth.get("payTo") or "").lower()
                 off_nonce = str(off_auth.get("nonce") or "")
                 leg_nonce = str(leg_auth.get("nonce") or "")
+                req_nonce = str(getattr(official_req, "nonce", "") or "")
+
+                nonce_mismatch = False
+                if off_nonce and leg_nonce and off_nonce != leg_nonce:
+                    # EIP-3009 converts the application/challenge nonce into a 32-byte hex string.
+                    # If leg_nonce matches the requirement challenge nonce preserved in the payload, this is not a conflict.
+                    if req_nonce and req_nonce == leg_nonce:
+                        nonce_mismatch = False
+                    else:
+                        nonce_mismatch = True
 
                 if (off_val and leg_val and off_val != leg_val) or \
                    (off_to and leg_to and off_to != leg_to) or \
-                   (off_nonce and leg_nonce and off_nonce != leg_nonce):
+                   nonce_mismatch:
                     logger.warning("Conflicting terms between official PAYMENT-SIGNATURE and legacy payload.")
-                    new_headers = [(k, v) for k, v in headers if k.lower() != b"x-402-payment-payload"]
+                    new_headers = [
+                        (k, v) for k, v in headers
+                        if k.lower() not in (b"x-402-payment-payload", b"payment-signature", b"x-payment")
+                    ]
                     new_headers.append((b"x-402-payment-payload", b"CONFLICTING_PAYMENT_HEADERS_DETECTED"))
+                    new_headers.append((b"payment-signature", b"CONFLICTING_PAYMENT_HEADERS_DETECTED"))
                     scope = dict(scope, headers=new_headers)
             except Exception as conf_err:
                 logger.warning("Failed during dual payment header consistency validation: %s", conf_err)
-                new_headers = [(k, v) for k, v in headers if k.lower() != b"x-402-payment-payload"]
+                new_headers = [
+                    (k, v) for k, v in headers
+                    if k.lower() not in (b"x-402-payment-payload", b"payment-signature", b"x-payment")
+                ]
                 new_headers.append((b"x-402-payment-payload", b"MALFORMED_DUAL_PAYMENT_HEADERS"))
+                new_headers.append((b"payment-signature", b"MALFORMED_DUAL_PAYMENT_HEADERS"))
                 scope = dict(scope, headers=new_headers)
 
         # If client provided official PAYMENT-SIGNATURE without legacy X-402-Payment-Payload:

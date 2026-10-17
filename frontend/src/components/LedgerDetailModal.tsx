@@ -130,7 +130,7 @@ export const LedgerDetailModal: React.FC<LedgerDetailModalProps> = ({ record, on
               <span className="text-[#82786F] text-[11px]">Base Sepolia (eip155:84532)</span>
             </div>
 
-            {explorerUrl && (
+            {explorerUrl ? (
               <div className="pt-2 border-t border-[#CFC7BB] flex items-center justify-between">
                 <span className="text-[#82786F]">On-Chain Transaction (BaseScan):</span>
                 <a

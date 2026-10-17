@@ -304,7 +304,7 @@ with Session() as s:
     s.commit()
 print("WRITER_SUCCESS")
 '''
-        res1 = subprocess.run([sys.executable, "-c", writer_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd="c:/AgentMarket")
+        res1 = subprocess.run([sys.executable, "-c", writer_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         assert res1.returncode == 0, f"Writer process failed: {res1.stderr}"
         assert "WRITER_SUCCESS" in res1.stdout
 
@@ -349,7 +349,7 @@ assert reserved_amt == 5000, f"Expected 5000 reserved, got {{reserved_amt}}"
 
 print("READER_SUCCESS")
 '''
-        res2 = subprocess.run([sys.executable, "-c", reader_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd="c:/AgentMarket")
+        res2 = subprocess.run([sys.executable, "-c", reader_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         assert res2.returncode == 0, f"Reader process failed: {res2.stderr}"
         assert "READER_SUCCESS" in res2.stdout
 

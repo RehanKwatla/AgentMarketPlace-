@@ -291,7 +291,16 @@ def _extract_and_decode_payment_payload(
                 official_obj = x402_http.decode_payment_signature_header(raw_header)
                 if hasattr(official_obj, "payload") and isinstance(official_obj.payload, dict):
                     inner = official_obj.payload
-                    auth = inner.get("authorization", {})
+                    auth = dict(inner.get("authorization", {}))
+                    if hasattr(official_obj, "accepted") and official_obj.accepted:
+                        if hasattr(official_obj.accepted, "network") and official_obj.accepted.network:
+                            auth["network"] = official_obj.accepted.network
+                        if hasattr(official_obj.accepted, "asset") and official_obj.accepted.asset:
+                            auth["token"] = official_obj.accepted.asset
+                        if hasattr(official_obj.accepted, "pay_to") and official_obj.accepted.pay_to:
+                            if "to" not in auth and "payTo" not in auth:
+                                auth["payTo"] = official_obj.accepted.pay_to
+                                auth["to"] = official_obj.accepted.pay_to
                     sig = inner.get("signature", "")
                     buyer = (
                         inner.get("buyer_address")
@@ -528,12 +537,20 @@ async def _verify_and_execute_seller(
 
         # Official x402 v2 settlement proof headers (base64 encoded SettleResponse)
         try:
+            is_hex_tx = settlement_proof.startswith("0x") and len(settlement_proof) in (64, 66)
+            extra_payload = {
+                "settlement_type": "unverified_transaction_hash" if is_hex_tx else "local_authorization_receipt",
+                "confirmed_on_chain": False,
+                "authorization_id": settlement_proof,
+                "verification_status": "unconfirmed_offline_rpc_unavailable" if is_hex_tx else "local_authorization",
+            }
             if OfficialSettleResponse is not None and x402_http is not None:
                 settle_obj = OfficialSettleResponse(
                     success=True,
                     transaction=settlement_proof,
                     network=NETWORK_BASE_SEPOLIA,
                     amount=str(amount_units),
+                    extra=extra_payload,
                 )
                 encoded_settle = x402_http.encode_payment_response_header(settle_obj)
             else:
@@ -542,6 +559,7 @@ async def _verify_and_execute_seller(
                     "transaction": settlement_proof,
                     "network": NETWORK_BASE_SEPOLIA,
                     "amount": str(amount_units),
+                    "extra": extra_payload,
                 }
                 encoded_settle = base64.b64encode(json.dumps(settle_dict).encode("utf-8")).decode("utf-8")
 
