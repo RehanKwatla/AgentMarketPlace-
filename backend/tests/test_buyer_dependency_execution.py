@@ -506,4 +506,3 @@ async def test_fallback_budget_safety_recheck():
     finally:
         service.registry._services.pop("data_expensive_fb", None)
         service.registry._services.pop("data-expensive-fb", None)
-

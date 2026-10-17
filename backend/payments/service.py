@@ -245,6 +245,37 @@ class PaymentService:
                 "message": "Settlement outcome remains ambiguous or RPC query failed. Retaining suspense hold.",
             }
 
+    async def reconcile_all_pending(self) -> List[Dict[str, Any]]:
+        """Reconciles all attempts currently in PENDING_RECONCILIATION status.
+
+        Gathers pending attempt IDs from both in-memory suspense holds and durable
+        database records, executing individual authoritative reconciliation checks.
+        """
+        attempt_ids = set(self._pending_reconciliations.keys())
+        if self.repo:
+            try:
+                db_pendings = self.repo.get_pending_reconciliations()
+                for p in db_pendings:
+                    attempt_ids.add(p.attempt_id)
+            except Exception as e:
+                logger.warning(f"Failed to query database for pending reconciliations: {e}")
+
+        results = []
+        for att_id in sorted(attempt_ids):
+            try:
+                res = await self.reconcile_attempt(att_id)
+                results.append(res)
+            except Exception as err:
+                logger.error(f"Error during batch reconciliation of attempt {att_id}: {err}")
+                results.append({
+                    "attempt_id": att_id,
+                    "status": PaymentStatus.PENDING_RECONCILIATION.value,
+                    "reconciled": False,
+                    "error_reason": str(err),
+                    "message": f"Exception during reconciliation: {err}",
+                })
+        return results
+
     def get_or_create_task_budget(self, task_id: str, budget_units: int) -> BudgetManager:
         """Retrieve existing task budget manager or initialize for new task."""
         if task_id not in self._task_budgets:

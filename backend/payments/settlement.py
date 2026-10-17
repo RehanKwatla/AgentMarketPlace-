@@ -84,13 +84,20 @@ class SettlementVerifier:
         self,
         rpc_url: Optional[str] = None,
         facilitator_url: Optional[str] = None,
-        test_mode: bool = False,
+        test_mode: Optional[bool] = None,
     ):
         settings = get_settings()
         self.rpc_url = rpc_url or settings.base_sepolia_rpc_url
         self.facilitator_url = facilitator_url or settings.x402_facilitator_url
-        import os
-        self.test_mode = test_mode if test_mode is not None else ((settings.buyer_private_key is None) or bool(os.environ.get("PYTEST_CURRENT_TEST")))
+        if test_mode is not None:
+            self.test_mode = test_mode
+        else:
+            import os
+            self.test_mode = (
+                (settings.buyer_private_key is None)
+                or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+                or (settings.environment.lower() in ("test", "testing", "dev", "development"))
+            )
         self._w3 = Web3() if Web3 is not None else None
 
     async def verify_settlement_proof(
@@ -182,8 +189,28 @@ class SettlementVerifier:
             return False, receipt_id
 
         # Live mode: Facilitator API query
-        logger.warning(f"Live facilitator verification called for '{receipt_id}' - endpoint not yet integrated [STUB].")
-        return False, receipt_id
+        if not self.facilitator_url:
+            logger.warning("No facilitator_url configured for live facilitator receipt verification.")
+            return False, receipt_id
+
+        url = f"{self.facilitator_url.rstrip('/')}/receipts/{receipt_id}"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    status_val = str(data.get("status", "")).lower()
+                    if status_val in ("confirmed", "settled", "success", "paid") or data.get("valid") is True:
+                        return True, receipt_id
+                    logger.warning(f"Facilitator returned non-settled status for receipt {receipt_id}: {data}")
+                    return False, receipt_id
+                else:
+                    logger.warning(f"Facilitator query returned HTTP {resp.status_code} for receipt {receipt_id}")
+                    return False, receipt_id
+        except Exception as exc:
+            logger.warning(f"Facilitator query failed for receipt {receipt_id}: {exc}")
+            return False, receipt_id
+
 
     def decode_and_validate_transfer_logs(
         self,
@@ -390,10 +417,11 @@ class SellerPaymentVerifier(SellerPaymentVerifierInterface):
 
     def __init__(self, settlement_verifier: Optional[SettlementVerifier] = None, test_mode: Optional[bool] = None):
         settings = get_settings()
-        if test_mode is None:
-            test_mode = settings.environment in ("development", "test", "testing")
-        self.verifier = settlement_verifier or SettlementVerifier(test_mode=test_mode)
-        self.test_mode = test_mode
+        if test_mode is not None:
+            self.test_mode = test_mode
+        else:
+            self.test_mode = settings.environment.lower() in ("test", "testing", "dev", "development")
+        self.verifier = settlement_verifier or SettlementVerifier(test_mode=self.test_mode)
 
     def issue_challenge(
         self,
