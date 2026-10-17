@@ -1,3 +1,4 @@
+from typing import List, Optional
 import asyncio
 from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse
@@ -11,6 +12,35 @@ from backend.buyer.schemas import (
 from backend.buyer.service import buyer_service
 
 router = APIRouter(tags=["Buyer Tasks"])
+
+
+@router.get(
+    "/api/v1/tasks",
+    response_model=List[TaskDetailResponse],
+    summary="List Buyer Tasks",
+    description="Retrieve a paginated list of created and executed buyer tasks with status and budget summary."
+)
+async def list_tasks_endpoint(
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by task status"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    tasks = buyer_service.list_tasks(status=status_filter, limit=limit, offset=offset)
+    return JSONResponse(status_code=status.HTTP_200_OK, content=[t.model_dump() for t in tasks])
+
+
+@router.get(
+    "/api/v1/buyer/tasks",
+    response_model=List[TaskDetailResponse],
+    summary="Legacy List Buyer Tasks",
+    description="Maintains backward compatibility for /api/v1/buyer/tasks GET callers."
+)
+async def legacy_list_tasks_endpoint(
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by task status"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    return await list_tasks_endpoint(status_filter=status_filter, limit=limit, offset=offset)
 
 
 @router.post(

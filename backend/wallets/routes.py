@@ -12,6 +12,7 @@ from .schemas import (
     WalletLinkRequest,
     WalletResponse,
     WalletRoleUpdateRequest,
+    WalletBalanceResponse,
 )
 from .service import WalletService
 
@@ -123,3 +124,91 @@ async def unlink_wallet(
     """Safely unlink a wallet from the user's account."""
     WalletService.unlink_wallet(db, current_user.id, wallet_id)
     return {"message": f"Wallet '{wallet_id}' successfully unlinked."}
+
+
+@router.get("/{address}/balance", response_model=WalletBalanceResponse, summary="Get EVM Wallet Balance on Base Sepolia")
+async def get_wallet_balance(address: str):
+    """Retrieve on-chain USDC and ETH balance for an EVM wallet on Base Sepolia.
+
+    Resilient fallback: If RPC is unreachable or in offline test environment,
+    returns valid structure with is_verified_onchain=False and source='simulated_offline'.
+    """
+    from .verifier import normalize_address
+    from backend.shared.config import get_settings
+    from backend.shared.constants import (
+        NETWORK_BASE_SEPOLIA,
+        CHAIN_ID_BASE_SEPOLIA,
+        USDC_BASE_SEPOLIA,
+        base_units_to_usdc,
+    )
+    import httpx
+
+    try:
+        norm_addr = normalize_address(address)
+    except Exception:
+        norm_addr = address
+
+    settings = get_settings()
+    rpc_url = getattr(settings, "base_sepolia_rpc_url", "https://sepolia.base.org")
+
+    usdc_units = 0
+    native_wei = 0
+    is_verified = False
+    source = "simulated_offline"
+
+    try:
+        clean_addr = norm_addr.lower()
+        if clean_addr.startswith("0x") and len(clean_addr) == 42:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                eth_resp = await client.post(
+                    rpc_url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "method": "eth_getBalance",
+                        "params": [norm_addr, "latest"],
+                        "id": 1,
+                    }
+                )
+                if eth_resp.status_code == 200:
+                    eth_data = eth_resp.json()
+                    if "result" in eth_data and isinstance(eth_data["result"], str):
+                        native_wei = int(eth_data["result"], 16)
+                        is_verified = True
+                        source = "rpc"
+
+                padded_addr = norm_addr[2:].lower().rjust(64, "0")
+                data_hex = f"0x70a08231{padded_addr}"
+                usdc_resp = await client.post(
+                    rpc_url,
+                    json={
+                        "jsonrpc": "2.0",
+                        "method": "eth_call",
+                        "params": [{"to": USDC_BASE_SEPOLIA, "data": data_hex}, "latest"],
+                        "id": 2,
+                    }
+                )
+                if usdc_resp.status_code == 200:
+                    usdc_data = usdc_resp.json()
+                    if "result" in usdc_data and isinstance(usdc_data["result"], str):
+                        usdc_units = int(usdc_data["result"], 16)
+                        is_verified = True
+                        source = "rpc"
+    except Exception:
+        pass
+
+    native_eth_str = f"{(native_wei / 1e18):.6f}" if native_wei > 0 else "0.000000"
+
+    return WalletBalanceResponse(
+        address=norm_addr,
+        network=NETWORK_BASE_SEPOLIA,
+        chain_id=CHAIN_ID_BASE_SEPOLIA,
+        token="USDC",
+        token_address=USDC_BASE_SEPOLIA,
+        balance_base_units=usdc_units,
+        balance_usdc=base_units_to_usdc(usdc_units),
+        native_balance_wei=str(native_wei),
+        native_balance_eth=native_eth_str,
+        is_verified_onchain=is_verified,
+        source=source,
+    )
+

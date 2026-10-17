@@ -45,7 +45,7 @@ from backend.payments.errors import (
     SettlementTimeoutError,
     SettlementVerificationError,
 )
-from backend.database.session import SessionLocal
+from backend.database.session import SessionLocal, init_db
 
 VALID_DATA_OUTPUT = {
     "symbol": "BTC",
@@ -62,8 +62,14 @@ VALID_ETH_OUTPUT = {
 }
 
 
+@pytest.fixture(autouse=True)
+def ensure_db_initialized():
+    """Ensure all database tables and schema migrations are applied."""
+    init_db()
+
+
 @pytest.fixture
-def integration_repo():
+def integration_repo(ensure_db_initialized):
     """Provides a clean repository instance connected to the test database."""
     return DurablePaymentRepository(session_factory=SessionLocal)
 

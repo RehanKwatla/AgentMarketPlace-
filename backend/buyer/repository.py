@@ -55,9 +55,11 @@ class TaskRepository:
         self,
         task_id: str,
         status: str,
-        total_cost_usdc: Optional[str] = None
+        total_cost_usdc: Optional[str] = None,
+        failure_reason: Optional[str] = None,
+        final_result: Optional[str] = None,
     ) -> None:
-        """Update status and final cost for a persisted task."""
+        """Update status, final cost, failure reason, and final result for a persisted task."""
         if self._simulate_failure:
             raise PersistenceError("Simulated database persistence failure during status update.")
 
@@ -68,6 +70,10 @@ class TaskRepository:
                     record.status = status
                     if total_cost_usdc is not None:
                         record.total_cost_usdc = total_cost_usdc
+                    if failure_reason is not None:
+                        record.failure_reason = failure_reason
+                    if final_result is not None:
+                        record.final_result = final_result
                     session.commit()
         except PersistenceError:
             raise
@@ -85,6 +91,26 @@ class TaskRepository:
                 return record
         except Exception:
             return None
+
+    def list_tasks(
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0
+    ) -> list[TaskRecordModel]:
+        """List tasks with optional status filter and pagination."""
+        try:
+            with SessionLocal() as session:
+                query = session.query(TaskRecordModel)
+                if status:
+                    query = query.filter(TaskRecordModel.status == status)
+                query = query.order_by(TaskRecordModel.created_at.desc())
+                records = query.offset(offset).limit(limit).all()
+                for r in records:
+                    session.expunge(r)
+                return records
+        except Exception:
+            return []
 
     def record_call_to_ledger(
         self,

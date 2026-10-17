@@ -94,6 +94,13 @@ def _migrate_schema(engine_to_migrate) -> None:
                     conn.execute(text("ALTER TABLE ledger_records ADD COLUMN token VARCHAR(64)"))
                 if "token_address" not in columns:
                     conn.execute(text("ALTER TABLE ledger_records ADD COLUMN token_address VARCHAR(64)"))
+        if "tasks" in table_names:
+            t_columns = {col["name"] for col in inspector.get_columns("tasks")}
+            with engine_to_migrate.begin() as conn:
+                if "failure_reason" not in t_columns:
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN failure_reason TEXT"))
+                if "final_result" not in t_columns:
+                    conn.execute(text("ALTER TABLE tasks ADD COLUMN final_result TEXT"))
     except Exception:
         pass
 

@@ -96,6 +96,8 @@ class BuyerService:
                 remaining_atomic=remaining_units,
                 max_concurrency=3,
                 calls=[],
+                failure_reason=getattr(db_record, "failure_reason", None),
+                final_result=getattr(db_record, "final_result", None),
                 created_at=db_record.created_at.isoformat() if db_record.created_at else datetime.now(timezone.utc).isoformat()
             )
             self._tasks[task_id] = fallback_task
@@ -140,8 +142,35 @@ class BuyerService:
             explanation=task.explanation.model_dump() if task.explanation else None,
             spent_usdc=task.spent_usdc,
             remaining_usdc=task.remaining_usdc,
+            failure_reason=task.failure_reason,
             calls=task.calls
         )
+
+    def list_tasks(
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List[TaskDetailResponse]:
+        """List tasks ordered by creation time, merging memory cache and durable database records."""
+        db_records = self.repository.list_tasks(status=status, limit=limit, offset=offset)
+        seen_ids = set()
+        results: List[TaskDetailResponse] = []
+
+        for rec in db_records:
+            t = self.get_task(rec.task_id)
+            if t:
+                results.append(t)
+                seen_ids.add(rec.task_id)
+
+        for tid, task in self._tasks.items():
+            if tid not in seen_ids:
+                if status is None or task.status == status:
+                    results.append(task)
+                    seen_ids.add(tid)
+
+        results.sort(key=lambda x: x.created_at, reverse=True)
+        return results[offset : offset + limit]
 
     def create_task(self, request: TaskCreationRequest) -> TaskDetailResponse:
         """Step 1 of Lifecycle: Validate & persist task in 'accepted' state without executing payments."""
@@ -194,7 +223,7 @@ class BuyerService:
             )
 
         budget_units = usdc_to_base_units(request.budget_usdc)
-        budget_mgr = BudgetManager(initial_budget_units=budget_units)
+        budget_mgr = BudgetManager(initial_budget_units=budget_units, task_id=task_id)
 
         # Transition to PLANNING
         task_record.status = TaskStatus.PLANNING.value
@@ -219,7 +248,13 @@ class BuyerService:
                 warnings=[f"Task refused during planning: {str(e)}"]
             )
             task_record.completed_at = datetime.now(timezone.utc).isoformat()
-            self.repository.update_task_status(task_id, status=TaskStatus.REFUSED.value, total_cost_usdc="0.000000")
+            self.repository.update_task_status(
+                task_id,
+                status=TaskStatus.REFUSED.value,
+                total_cost_usdc="0.000000",
+                failure_reason=task_record.failure_reason,
+                final_result=task_record.final_result
+            )
             return task_record
 
         # Transition to RUNNING
@@ -292,6 +327,27 @@ class BuyerService:
         else:
             task_status = TaskStatus.FAILED.value
 
+        if task_status == TaskStatus.FAILED.value and not task_record.failure_reason:
+            failed_reasons = [f"{c.service_id}: {c.error}" for c in all_calls if c.error]
+            if failed_reasons:
+                task_record.failure_reason = "Task execution failed: " + "; ".join(failed_reasons)
+            elif warnings:
+                task_record.failure_reason = "Task execution failed: " + "; ".join(warnings)
+            else:
+                task_record.failure_reason = "Task execution failed: No service calls succeeded."
+        elif task_status == TaskStatus.REFUSED.value and not task_record.failure_reason:
+            refused_reasons = [f"{c.service_id}: {c.error}" for c in all_calls if c.status == CallStatus.REFUSED and c.error]
+            if refused_reasons:
+                task_record.failure_reason = "Task refused: " + "; ".join(refused_reasons)
+            elif warnings:
+                task_record.failure_reason = "Task refused: " + "; ".join(warnings)
+            else:
+                task_record.failure_reason = "Task refused: Insufficient budget or incompatible services."
+        elif task_status == TaskStatus.COMPLETED_WITH_WARNINGS.value and not task_record.failure_reason:
+            warn_reasons = [f"{c.service_id}: {c.error}" for c in all_calls if c.error] + warnings
+            if warn_reasons:
+                task_record.failure_reason = "Completed with warnings: " + "; ".join(warn_reasons)
+
         task_record.status = task_status
         task_record.calls = all_calls
         task_record.spent_usdc = total_spent_usdc
@@ -309,7 +365,9 @@ class BuyerService:
         self.repository.update_task_status(
             task_id,
             status=task_status,
-            total_cost_usdc=base_units_to_usdc(total_spent_units)
+            total_cost_usdc=base_units_to_usdc(total_spent_units),
+            failure_reason=task_record.failure_reason,
+            final_result=task_record.final_result
         )
 
         return task_record

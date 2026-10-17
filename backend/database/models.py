@@ -82,6 +82,8 @@ class TaskRecordModel(Base):
     budget_usdc = Column(String(32), nullable=False)
     total_cost_usdc = Column(String(32), default="0.000000")
     status = Column(String(32), nullable=False)
+    failure_reason = Column(Text, nullable=True)
+    final_result = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

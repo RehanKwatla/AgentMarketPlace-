@@ -217,3 +217,117 @@ def test_postgresql_advisory_lock_sql_syntax_validity():
     assert "hashtext" in compiled_nonce
     assert "pg_advisory_xact_lock" in compiled_budget
     assert "hashtext" in compiled_budget
+
+
+def test_runtime_list_tasks_endpoints(api_client):
+    """13. GET /api/v1/tasks and /api/v1/buyer/tasks: Retrieve paginated tasks with status filters."""
+    # Verify primary tasks list
+    res = api_client.get("/api/v1/tasks?limit=10")
+    assert res.status_code == 200
+    tasks = res.json()
+    assert isinstance(tasks, list)
+
+    # Verify legacy route backward compatibility
+    res_legacy = api_client.get("/api/v1/buyer/tasks?limit=10")
+    assert res_legacy.status_code == 200
+    tasks_legacy = res_legacy.json()
+    assert isinstance(tasks_legacy, list)
+
+
+def test_runtime_ledger_filtering(api_client):
+    """14. GET /api/v1/ledger: Filter by task_id, tx_hash, and buyer_id."""
+    unique_task = "task_test_filter_99"
+    unique_tx = "rec_auth_test_filter_99"
+    unique_buyer = "buyer_filter_99"
+
+    test_rec = LedgerRecordSchema(
+        request_id="req_test_filter_99",
+        task_id=unique_task,
+        call_id="call_filter_99",
+        buyer_id=unique_buyer,
+        seller_id="seller_data_001",
+        service_id="data_001",
+        listed_price="0.002000",
+        amount_paid="0.002000",
+        amount_base_units=2000,
+        tx_hash=unique_tx,
+        settlement_proof=unique_tx,
+        status=LedgerStatus.PAID,
+        latency_ms=12.0,
+    )
+    ledger_repo.record_transaction(test_rec)
+
+    # Filter by task_id
+    res_task = api_client.get(f"/api/v1/ledger?task_id={unique_task}")
+    assert res_task.status_code == 200
+    data_task = res_task.json()
+    assert data_task["total"] >= 1
+    assert any(r["task_id"] == unique_task for r in data_task["records"])
+
+    # Filter by tx_hash
+    res_tx = api_client.get(f"/api/v1/ledger?tx_hash={unique_tx}")
+    assert res_tx.status_code == 200
+    data_tx = res_tx.json()
+    assert data_tx["total"] >= 1
+    assert any(r["tx_hash"] == unique_tx for r in data_tx["records"])
+
+    # Filter by buyer_id
+    res_buyer = api_client.get(f"/api/v1/ledger?buyer_id={unique_buyer}")
+    assert res_buyer.status_code == 200
+    data_buyer = res_buyer.json()
+    assert data_buyer["total"] >= 1
+    assert any(r["buyer_id"] == unique_buyer for r in data_buyer["records"])
+
+
+def test_runtime_verify_tx_endpoint(api_client):
+    """15. GET /api/v1/payments/verify-tx/{tx_hash}: Check settlement evidence without fabrication."""
+    # Unknown tx hash
+    res_unknown = api_client.get("/api/v1/payments/verify-tx/0x9999999999999999999999999999999999999999999999999999999999999999")
+    assert res_unknown.status_code == 200
+    data_unknown = res_unknown.json()
+    assert data_unknown["is_confirmed"] is False
+    assert data_unknown["status"] == "not_found"
+
+    # Insert a verified local authorization record into ledger
+    tx_auth = "rec_auth_verify_test_01"
+    auth_rec = LedgerRecordSchema(
+        request_id="req_verify_test_01",
+        task_id="task_verify_01",
+        call_id="call_verify_01",
+        buyer_id="buyer_verify_01",
+        seller_id="seller_data_001",
+        service_id="data_001",
+        listed_price="0.002000",
+        amount_paid="0.002000",
+        amount_base_units=2000,
+        tx_hash=tx_auth,
+        settlement_proof=tx_auth,
+        status=LedgerStatus.PAID,
+        latency_ms=10.0,
+    )
+    ledger_repo.record_transaction(auth_rec)
+
+    # Local authorization record from ledger
+    res_local = api_client.get(f"/api/v1/payments/verify-tx/{tx_auth}")
+    assert res_local.status_code == 200
+    data_local = res_local.json()
+    assert data_local["is_confirmed"] is False
+    assert data_local["status"] == "local_authorization"
+    assert data_local["evidence_type"] == "local_authorization"
+
+
+def test_runtime_wallet_balance_endpoint(api_client):
+    """16. GET /api/v1/wallets/{address}/balance: Resilient on-chain / offline balance query."""
+    test_addr = "0xd43E2b230255C89E78D6205d3f1d938173a8f707"
+    res = api_client.get(f"/api/v1/wallets/{test_addr}/balance")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["address"].lower() == test_addr.lower()
+    assert data["network"] == NETWORK_BASE_SEPOLIA
+    assert data["chain_id"] == 84532
+    assert data["token"] == "USDC"
+    assert "balance_base_units" in data
+    assert "balance_usdc" in data
+    assert "native_balance_eth" in data
+    assert "source" in data
+

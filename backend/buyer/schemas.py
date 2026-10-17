@@ -218,6 +218,8 @@ class TaskResultResponse(BaseModel):
     explanation: Optional[Dict[str, Any]] = None
     spent_usdc: str = "0.000000"
     remaining_usdc: str = "0.000000"
+    failure_reason: Optional[str] = None
+    calls: List[ServiceCallRecord] = Field(default_factory=list)
 
 
 class TaskCallsResponse(BaseModel):

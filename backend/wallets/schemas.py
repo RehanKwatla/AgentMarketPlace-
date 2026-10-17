@@ -49,3 +49,17 @@ class WalletResponse(BaseModel):
 class WalletRoleUpdateRequest(BaseModel):
     role: Optional[WalletRole] = None
     is_primary: Optional[bool] = None
+
+
+class WalletBalanceResponse(BaseModel):
+    address: str
+    network: str = NETWORK_BASE_SEPOLIA
+    chain_id: int = CHAIN_ID_BASE_SEPOLIA
+    token: str = "USDC"
+    token_address: str = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    balance_base_units: int = 0
+    balance_usdc: str = "0.000000"
+    native_balance_wei: str = "0"
+    native_balance_eth: str = "0.000000"
+    is_verified_onchain: bool = False
+    source: str = "simulated_offline"

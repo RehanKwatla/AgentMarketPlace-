@@ -253,3 +253,101 @@ async def get_payment_dashboard_metrics():
         pending_reconciliations_count=pending_count,
         recent_transactions=recent_transactions,
     )
+
+
+@router.get(
+    "/verify-tx/{tx_hash}",
+    summary="Verify on-chain settlement evidence and Base Sepolia receipt for a transaction hash"
+)
+async def verify_transaction_hash(tx_hash: str):
+    """Authoritatively inspect verified settlement evidence for a transaction hash on Base Sepolia.
+
+    Rules:
+    - Never fabricates verified status.
+    - Checks durable SettlementEvidenceRecordModel and Base Sepolia receipt.
+    - Returns confirmed_on_chain, local_authorization, unverified_hash, or not_found.
+    """
+    clean_tx = tx_hash.strip().lower()
+    is_hex = clean_tx.startswith("0x") and len(clean_tx) in (64, 66)
+    explorer_url = f"https://sepolia.basescan.org/tx/{clean_tx}" if is_hex else None
+
+    # 1. Check authoritative SettlementEvidenceRecordModel in durable DB
+    evidence_record = None
+    try:
+        from backend.database.session import SessionLocal
+        from backend.payments.models import SettlementEvidenceRecordModel
+        with SessionLocal() as db_sess:
+            evidence_record = db_sess.query(SettlementEvidenceRecordModel).filter(
+                SettlementEvidenceRecordModel.tx_hash == clean_tx
+            ).first()
+    except Exception:
+        pass
+
+    if evidence_record:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "tx_hash": clean_tx,
+                "network": evidence_record.network or NETWORK_BASE_SEPOLIA,
+                "token_address": evidence_record.token_address or USDC_BASE_SEPOLIA,
+                "recipient_address": evidence_record.recipient_address,
+                "amount_units": evidence_record.amount_units,
+                "amount_usdc": base_units_to_usdc(evidence_record.amount_units) if evidence_record.amount_units else "0.000000",
+                "is_confirmed": True,
+                "status": "confirmed_on_chain",
+                "evidence_type": "confirmed_on_chain",
+                "explorer_url": explorer_url,
+                "block_number": evidence_record.block_number,
+                "verified_at": evidence_record.verified_at.isoformat() if hasattr(evidence_record.verified_at, "isoformat") else str(evidence_record.verified_at),
+            }
+        )
+
+    # 2. Check ledger records for local authorization or pending tx
+    ledger_entry = ledger_repo.get_record(clean_tx)
+    if not ledger_entry:
+        matching = ledger_repo.list_records(tx_hash=clean_tx, limit=1)
+        if matching:
+            ledger_entry = matching[0]
+
+    if ledger_entry:
+        proof = getattr(ledger_entry, "settlement_proof", "") or ""
+        st_val = ledger_entry.status.value if hasattr(ledger_entry.status, "value") else str(ledger_entry.status)
+        if proof.startswith("rec_auth_") or proof.startswith("local_"):
+            ev_type = "local_authorization"
+            status_label = "local_authorization"
+        elif is_hex:
+            ev_type = "unverified_hash"
+            status_label = "unverified_hash"
+        else:
+            ev_type = "unclassified"
+            status_label = st_val
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "tx_hash": clean_tx,
+                "network": getattr(ledger_entry, "network", NETWORK_BASE_SEPOLIA),
+                "service_id": ledger_entry.service_id,
+                "amount_usdc": ledger_entry.amount_paid,
+                "amount_units": ledger_entry.amount_base_units,
+                "is_confirmed": False,
+                "status": status_label,
+                "evidence_type": ev_type,
+                "explorer_url": explorer_url,
+                "settlement_proof": proof,
+            }
+        )
+
+    # 3. Not found in records
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "tx_hash": clean_tx,
+            "network": NETWORK_BASE_SEPOLIA,
+            "is_confirmed": False,
+            "status": "not_found",
+            "evidence_type": "unknown",
+            "explorer_url": explorer_url,
+        }
+    )
+

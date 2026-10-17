@@ -267,6 +267,9 @@ class LedgerRepository:
         self,
         status: Optional[str] = None,
         service_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        tx_hash: Optional[str] = None,
+        buyer_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ) -> List[LedgerRecordSchema]:
@@ -279,6 +282,12 @@ class LedgerRepository:
                         query = query.filter(LedgerRecordModel.status == status)
                     if service_id:
                         query = query.filter(LedgerRecordModel.service_id == service_id)
+                    if task_id:
+                        query = query.filter(LedgerRecordModel.task_id == task_id)
+                    if tx_hash:
+                        query = query.filter(LedgerRecordModel.tx_hash == tx_hash)
+                    if buyer_id:
+                        query = query.filter(LedgerRecordModel.buyer_id == buyer_id)
                     query = query.order_by(LedgerRecordModel.timestamp.desc())
                     rows = query.offset(offset).limit(limit).all()
                     if rows:
@@ -294,10 +303,23 @@ class LedgerRepository:
                 results = [r for r in results if (r.status.value == status if hasattr(r.status, "value") else str(r.status) == status)]
             if service_id:
                 results = [r for r in results if r.service_id == service_id]
+            if task_id:
+                results = [r for r in results if getattr(r, "task_id", None) == task_id]
+            if tx_hash:
+                results = [r for r in results if getattr(r, "tx_hash", None) == tx_hash]
+            if buyer_id:
+                results = [r for r in results if r.buyer_id == buyer_id]
             results.sort(key=lambda r: r.timestamp, reverse=True)
             return results[offset : offset + limit]
 
-    def count(self, status: Optional[str] = None, service_id: Optional[str] = None) -> int:
+    def count(
+        self,
+        status: Optional[str] = None,
+        service_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        tx_hash: Optional[str] = None,
+        buyer_id: Optional[str] = None,
+    ) -> int:
         """Count matching records in durable database or memory cache."""
         with self._lock:
             try:
@@ -307,11 +329,17 @@ class LedgerRepository:
                         query = query.filter(LedgerRecordModel.status == status)
                     if service_id:
                         query = query.filter(LedgerRecordModel.service_id == service_id)
+                    if task_id:
+                        query = query.filter(LedgerRecordModel.task_id == task_id)
+                    if tx_hash:
+                        query = query.filter(LedgerRecordModel.tx_hash == tx_hash)
+                    if buyer_id:
+                        query = query.filter(LedgerRecordModel.buyer_id == buyer_id)
                     return query.count()
             except Exception:
                 pass
 
-            return len(self.list_records(status=status, service_id=service_id, limit=100000))
+            return len(self.list_records(status=status, service_id=service_id, task_id=task_id, tx_hash=tx_hash, buyer_id=buyer_id, limit=100000))
 
     def clear(self) -> None:
         """Helper to clear records (used in isolated test setups)."""

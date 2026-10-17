@@ -24,16 +24,28 @@ reputation_calc = reconciler.reputation_calc
 async def list_ledger_records(
     status: Optional[str] = Query(None, description="Filter by status (paid, paid output rejected, refused, failed and not charged)"),
     service_id: Optional[str] = Query(None, description="Filter by service_id"),
+    task_id: Optional[str] = Query(None, description="Filter by task_id"),
+    tx_hash: Optional[str] = Query(None, description="Filter by transaction hash"),
+    buyer_id: Optional[str] = Query(None, description="Filter by buyer_id"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
     records = ledger_repo.list_records(
         status=status,
         service_id=service_id,
+        task_id=task_id,
+        tx_hash=tx_hash,
+        buyer_id=buyer_id,
         limit=limit,
         offset=offset
     )
-    total = ledger_repo.count(status=status, service_id=service_id)
+    total = ledger_repo.count(
+        status=status,
+        service_id=service_id,
+        task_id=task_id,
+        tx_hash=tx_hash,
+        buyer_id=buyer_id
+    )
     return LedgerListResponse(total=total, records=records)
 
 
