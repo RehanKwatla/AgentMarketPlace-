@@ -105,3 +105,14 @@ async def repair_service_reputation(service_id: str):
 )
 async def repair_all_reputations():
     return reconciler.repair_reputation()
+
+
+@router.post(
+    "/api/v1/ledger/sync",
+    summary="Synchronize historical settlement evidence into durable ledger"
+)
+async def sync_ledger():
+    """Trigger idempotent synchronization of historical payment attempts and settlement evidence into durable ledger."""
+    from backend.ledger.reconciliation import settlement_reconciler
+    return settlement_reconciler.sync_historical_settlements()
+

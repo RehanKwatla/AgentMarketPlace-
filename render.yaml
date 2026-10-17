@@ -1,0 +1,64 @@
+# ==============================================================================
+# Render Blueprint Specification for AgentMarketplace DI-06
+# Deploys:
+#   1. Native Python Web Service (FastAPI ASGI via Uvicorn)
+#   2. Render Managed PostgreSQL Database (Durable application storage)
+# ==============================================================================
+
+services:
+  - type: web
+    name: agent-marketplace-api
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agent-marketplace-postgres
+          property: connectionString
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: BLOCKCHAIN_NETWORK
+        value: "eip155:84532"
+      - key: BASE_SEPOLIA_RPC_URL
+        value: "https://sepolia.base.org"
+      - key: CHAIN_ID
+        value: "84532"
+      - key: USDC_CONTRACT_ADDRESS
+        value: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+      - key: USDC_DECIMALS
+        value: "6"
+      - key: X402_FACILITATOR_URL
+        value: "https://facilitator.x402.org"
+      - key: X402_CLIENT_TIMEOUT_SECONDS
+        value: "15"
+      # ==============================================================================
+      # NON-OPERATIONAL PLACEHOLDER ADDRESSES (READ-ONLY & MOCK TESTING ONLY)
+      # WARNING: The addresses below (0x000...0 through 0x000...3) are strictly
+      # non-operational placeholders for initial read-only staging verification and
+      # mock-mode testing. They are NOT valid operational payment recipients and CANNOT
+      # receive or settle funds. Real payment-enabled testnet operation requires
+      # operator-supplied, funded Base Sepolia wallet addresses and explicit broadcast authorization.
+      # ==============================================================================
+      - key: BUYER_WALLET_ADDRESS
+        value: "0x0000000000000000000000000000000000000000"
+      - key: DATA_SELLER_PAY_TO
+        value: "0x0000000000000000000000000000000000000001"
+      - key: SCRAPING_SELLER_PAY_TO
+        value: "0x0000000000000000000000000000000000000002"
+      - key: INFERENCE_SELLER_PAY_TO
+        value: "0x0000000000000000000000000000000000000003"
+
+databases:
+  - name: agent-marketplace-postgres
+    databaseName: agent_marketplace
+    user: agent_marketplace_user
+    plan: free

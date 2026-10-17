@@ -129,11 +129,7 @@ class IdempotencyStore:
 
         if self.repo:
             try:
-                attempt = self.repo.get_attempt_by_idempotency_key(key)
-                if attempt:
-                    from backend.database.session import SessionLocal
-                    with SessionLocal() as session:
-                        db_att = session.query(self.repo.session_factory.kw.get("bind") or None).filter_by(idempotency_key=key).first() if False else None
+                self.repo.save_attempt_response(key, result)
             except Exception:
                 pass
 

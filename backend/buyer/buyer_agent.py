@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
+
 from backend.shared.constants import (
     HEADER_IDEMPOTENCY_KEY,
     HEADER_X402_PAYMENT_PAYLOAD,
@@ -63,14 +64,15 @@ class BuyerAgent:
         repository: TaskRepository = task_repository,
         planner: Optional[TaskPlanner] = None,
         service: Optional[BuyerService] = None,
-        selector: Any = None,
+        selector: Optional[Any] = None,
         aggregator: Optional[ResultAggregator] = None,
-        payment_service: Any = None,
+        payment_service: Optional[Any] = None,
     ):
         self.registry = registry
         self.repository = repository
         self.policy_verifier = PaymentPolicyVerifier()
         self.settlement_verifier = SettlementVerifier(rpc_url="")
+        self.payment_service = payment_service
 
         # Member 1 BuyerPaymentClientInterface compliance
         self.payment_client: BuyerPaymentClientInterface = payment_client or BuyerPaymentClient(
@@ -79,9 +81,10 @@ class BuyerAgent:
         )
 
         self.planner = planner or TaskPlanner()
+        self.selector = selector
         self.plan_validator = PlanValidator(registry=self.registry)
         self.output_validator = OutputValidator()
-        self.aggregator = ResultAggregator()
+        self.aggregator = aggregator or ResultAggregator()
         self.explanation_gen = ExplanationGenerator(registry=self.registry)
 
         # Core orchestration service backing multi-hop DAG execution
@@ -95,7 +98,78 @@ class BuyerAgent:
 
     async def execute_task(self, request: TaskRequest) -> TaskResponse:
         """Execute task request with end-to-end multi-hop tool chaining and official x402 payment lifecycle."""
-        # Convert TaskRequest to TaskCreationRequest
+        if self.payment_service is not None:
+            task_id = f"task_{uuid.uuid4().hex[:12]}"
+            budget_units = usdc_to_base_units(request.budget_usdc)
+            budget_mgr = self.payment_service.get_or_create_task_budget(task_id, budget_units)
+
+            # 1. Decompose task into planned steps
+            plan = self.planner.create_plan(TaskCreationRequest(task=request.task, budget_usdc=request.budget_usdc))
+
+            executions: List[ExecutionStep] = []
+            fallbacks: List[str] = []
+
+            for step in plan.calls:
+                service = self.registry.get_service(step.service_id)
+                if not service:
+                    fallbacks.append(f"Service '{step.service_id}' not found.")
+                    continue
+
+                call_id = f"step_{step.step_id}"
+                idempotency_key = f"idemp_{task_id}_{step.step_id}_{service.service_id}"
+                step_payload = getattr(step, "input_payload", {}) or {}
+
+                start_t = time.perf_counter()
+                paid_result = await self.payment_service.execute_paid_call(
+                    task_id=task_id,
+                    call_id=call_id,
+                    service_id=service.service_id,
+                    input_payload=step_payload,
+                    idempotency_key=idempotency_key,
+                    task_budget_manager=budget_mgr,
+                )
+                latency = (time.perf_counter() - start_t) * 1000.0
+
+                from backend.payments.schemas import PaymentStatus
+                if paid_result.status == PaymentStatus.PAID:
+                    step_status = LedgerStatus.PAID
+                elif paid_result.status == PaymentStatus.PAID_OUTPUT_REJECTED:
+                    step_status = LedgerStatus.PAID_OUTPUT_REJECTED
+                elif paid_result.status == PaymentStatus.REFUSED:
+                    step_status = LedgerStatus.REFUSED
+                else:
+                    step_status = LedgerStatus.FAILED_AND_NOT_CHARGED
+
+                step_output = paid_result.seller_output or {
+                    "status": paid_result.status.value,
+                    "error": paid_result.error_message or "Service call failed"
+                }
+
+                executions.append(ExecutionStep(
+                    step=step.step_id,
+                    service_id=service.service_id,
+                    request_id=paid_result.request_id,
+                    price_paid_usdc=paid_result.amount_usdc,
+                    tx_hash=paid_result.tx_hash,
+                    status=step_status,
+                    latency_ms=round(paid_result.latency_ms or latency, 2),
+                    output=step_output,
+                ))
+
+            selected = [e.service_id for e in executions]
+            return TaskResponse(
+                task_id=task_id,
+                status="completed",
+                budget_allocated_usdc=request.budget_usdc,
+                total_cost_usdc=base_units_to_usdc(sum(usdc_to_base_units(e.price_paid_usdc) for e in executions)),
+                cost_explanation="Execution completed via isolated payment service",
+                selected_services=selected,
+                executions=executions,
+                final_result="Task executed successfully",
+                errors_and_fallbacks=fallbacks,
+            )
+
+        # Full Phase 3 Multi-hop DAG execution
         creation_req = TaskCreationRequest(
             task=request.task,
             budget_usdc=request.budget_usdc,
@@ -182,11 +256,13 @@ class BuyerAgent:
             else:
                 step_status = LedgerStatus.FAILED_AND_NOT_CHARGED
 
+            req_id = c.call_id if c.call_id.startswith("req_") else f"req_{c.call_id}"
+
             executions.append(
                 ExecutionStep(
                     step=c.step_id,
                     service_id=c.service_id,
-                    request_id=c.call_id,
+                    request_id=req_id,
                     price_paid_usdc=c.amount_paid_usdc,
                     tx_hash=c.transaction_hash,
                     status=step_status,

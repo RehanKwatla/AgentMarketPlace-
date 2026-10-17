@@ -257,4 +257,38 @@ export interface TaskDetailResponse {
   completed_at?: string | null;
 }
 
+export interface SettlementEvidenceSummary {
+  confirmed_on_chain: number;
+  local_authorization: number;
+  unverified_hash: number;
+  pending_reconciliation: number;
+  failed_or_not_charged: number;
+}
+
+export interface PaymentDashboardData {
+  network: string;
+  token_address: string;
+  total_tasks: number;
+  total_paid_calls: number;
+  total_spend_usdc: string;
+  total_spend_base_units: number;
+  status_breakdown: Record<string, number>;
+  settlement_evidence: SettlementEvidenceSummary;
+  services_count: number;
+  pending_reconciliations_count: number;
+  recent_transactions: Array<{
+    request_id: string;
+    task_id: string;
+    service_id: string;
+    status: string;
+    amount_usdc: string;
+    amount_base_units: number;
+    tx_hash: string | null;
+    settlement_proof: string | null;
+    timestamp: string;
+    latency_ms: number;
+    evidence_type: string;
+    evidence_label: string;
+  }>;
+}
 

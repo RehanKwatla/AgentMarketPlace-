@@ -27,6 +27,14 @@ class BudgetManager:
         self.task_id = task_id
         self._repo = repo
 
+        # Cross-process/restart protection: deduct active uncommitted reservations from durable DB
+        if self.task_id and self.repo:
+            try:
+                active_reserved = self.repo.get_task_reserved_amount(self.task_id)
+                self._available_units = max(0, initial_budget_units - active_reserved)
+            except Exception:
+                pass
+
     @property
     def repo(self) -> Optional[Any]:
         if self._repo is None and self.task_id is not None:
@@ -56,11 +64,33 @@ class BudgetManager:
     async def reserve(self, reservation_id: str, amount_units: int) -> int:
         """Atomically reserve funds for an in-flight service call.
         Raises BudgetExceededError if available funds are insufficient.
+        Guarantees cross-process atomicity when durable repository and task_id are present.
         """
         if amount_units <= 0:
             raise ValueError("Reservation amount must be positive integer.")
 
         async with self._lock:
+            # Cross-process atomic reservation via database transaction
+            if self.repo and self.task_id and hasattr(self.repo, "atomic_reserve"):
+                success, new_available, err_msg = self.repo.atomic_reserve(
+                    task_id=self.task_id,
+                    reservation_id=reservation_id,
+                    call_id=reservation_id,
+                    amount_base_units=amount_units,
+                    total_budget_units=self._total_budget_units
+                )
+                if not success:
+                    raise BudgetExceededError(
+                        requested_units=amount_units,
+                        available_units=new_available
+                    )
+                self._available_units = new_available
+                self._reserved_units[reservation_id] = (
+                    self._reserved_units.get(reservation_id, 0) + amount_units
+                )
+                return self._available_units
+
+            # In-memory path (used when repo/task_id is not configured)
             if amount_units > self._available_units:
                 raise BudgetExceededError(
                     requested_units=amount_units,
@@ -71,20 +101,6 @@ class BudgetManager:
             self._reserved_units[reservation_id] = (
                 self._reserved_units.get(reservation_id, 0) + amount_units
             )
-
-            # Persist reservation if durable repository is configured
-            if self.repo and self.task_id:
-                try:
-                    self.repo.record_reservation(
-                        reservation_id=reservation_id,
-                        task_id=self.task_id,
-                        call_id=reservation_id,
-                        amount_base_units=amount_units,
-                        status="reserved"
-                    )
-                except Exception as err:
-                    logger.debug(f"Could not persist budget reservation to DB: {err}")
-
             return self._available_units
 
     async def commit(self, reservation_id: str, actual_spent_units: int) -> None:
@@ -103,7 +119,11 @@ class BudgetManager:
             # Update durable reservation record
             if self.repo:
                 try:
-                    self.repo.update_reservation_status(reservation_id, "committed")
+                    self.repo.update_reservation_status(
+                        reservation_id=reservation_id,
+                        new_status="committed",
+                        actual_spent_units=actual_spent_units
+                    )
                 except Exception as err:
                     logger.debug(f"Could not commit budget reservation in DB: {err}")
 

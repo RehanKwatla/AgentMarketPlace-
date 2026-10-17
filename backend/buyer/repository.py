@@ -165,4 +165,3 @@ class TaskRepository:
 
 # Global singleton instance
 task_repository = TaskRepository()
-

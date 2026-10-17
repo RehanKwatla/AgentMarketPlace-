@@ -42,11 +42,26 @@ def mock_service():
 @pytest.fixture
 def clean_payment_service():
     """Create a clean isolated PaymentService with dedicated in-memory stores in test mode."""
-    store = IdempotencyStore()
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from backend.payments.models import Base, DurablePaymentRepository
+
+    test_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(test_engine)
+    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    repo = DurablePaymentRepository(session_factory=TestSession)
+
+    store = IdempotencyStore(repo=repo)
     policy = PaymentPolicyVerifier()
-    settlement = SettlementVerifier(test_mode=True)
+    settlement = SettlementVerifier(test_mode=True, durable_repo=repo)
     adapter = X402Adapter(policy_verifier=policy, test_mode=True)
-    return PaymentService(policy_verifier=policy, settlement_verifier=settlement, adapter=adapter, store=store)
+    return PaymentService(
+        policy_verifier=policy,
+        settlement_verifier=settlement,
+        adapter=adapter,
+        store=store,
+        durable_repo=repo
+    )
 
 
 @pytest.mark.asyncio

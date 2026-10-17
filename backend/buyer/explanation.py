@@ -241,4 +241,3 @@ class ExplanationGenerator:
             explorer_links=explorer_links,
             warnings=warnings
         )
-

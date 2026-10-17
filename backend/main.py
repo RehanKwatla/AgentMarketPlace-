@@ -1,6 +1,6 @@
 """Main FastAPI Application Entrypoint for DI-06 Agent Economy."""
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -40,10 +40,22 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
+from backend.payments.middleware import X402ProtocolMiddleware
+
+# Parse configured CORS origins from environment
+cors_origins_raw = settings.cors_allowed_origins
+allowed_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+if not allowed_origins:
+    allowed_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+
+# In production, enforce strict allowlist and disallow wildcard '*'
+if settings.environment.lower() == "production" and "*" in allowed_origins:
+    allowed_origins = [o for o in allowed_origins if o != "*"]
+
 # Cross-Origin Resource Sharing (CORS) for Frontend Dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,9 +63,17 @@ app.add_middleware(
         "X-402-Requirement",
         "X-402-Payment-Payload",
         "X-402-Settlement-Proof",
+        "Payment-Required",
+        "Payment-Signature",
+        "Payment-Response",
+        "X-Payment",
+        "X-Payment-Response",
         "Idempotency-Key",
     ],
 )
+
+# Bidirectional bridge for official x402 v2 protocol wire headers
+app.add_middleware(X402ProtocolMiddleware)
 
 
 @app.exception_handler(AgentEconomyBaseException)
@@ -66,14 +86,26 @@ async def agent_economy_exception_handler(request: Request, exc: AgentEconomyBas
 
 # Health Check
 @app.get("/health", response_model=HealthResponse, tags=["Diagnostics"], summary="Health Check")
-async def health_check():
-    """Returns application health, version, network configuration, and subsystem connectivity."""
+async def health_check(response: Response):
+    """Returns application health, version, network configuration, and verifies database readiness."""
+    db_status = "connected"
+    is_healthy = True
+    try:
+        from backend.database.session import SessionLocal
+        from sqlalchemy import text
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    except Exception:
+        db_status = "disconnected"
+        is_healthy = False
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
     return HealthResponse(
-        status="healthy",
+        status="healthy" if is_healthy else "unhealthy",
         version="0.1.0",
         network=NETWORK_BASE_SEPOLIA,
         services={
-            "database": "connected",
+            "database": db_status,
             "registry": "active",
             "payment_engine": "configured"
         }

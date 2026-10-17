@@ -134,13 +134,19 @@ class TaskResponse(BaseModel):
 
 class LedgerRecordSchema(BaseModel):
     request_id: str
+    task_id: Optional[str] = None
+    call_id: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     buyer_id: str
     seller_id: str
     service_id: str
     listed_price: str
     amount_paid: str
+    amount_base_units: Optional[int] = None
     tx_hash: Optional[str] = None
+    settlement_proof: Optional[str] = None
+    network: Optional[str] = None
+    token_address: Optional[str] = None
     status: LedgerStatus
     latency_ms: float
     error_reason: Optional[str] = None
@@ -164,6 +170,7 @@ class LedgerRecordSchema(BaseModel):
             except Exception:
                 pass
         return self
+
 
 
 class LedgerListResponse(BaseModel):

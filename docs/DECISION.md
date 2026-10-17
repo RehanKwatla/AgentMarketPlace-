@@ -171,7 +171,7 @@ Premature payment execution upon task submission violates the principle of least
 
 ---
 
-## Decision 10: Deterministic-First DAG Planner, Hard Eligibility Gating, and Pre-Payment Plan Validation
+## Decision 18: Deterministic-First DAG Planner, Hard Eligibility Gating, and Pre-Payment Plan Validation
 
 ### 1. Context & Problem
 In agentic commerce systems, planning without validation leads to hallucinated endpoints, budget overruns, cycles in execution graphs, and payment commitments for invalid or disabled services. Allowing a candidate's high reputation or low price to override a safety failure introduces critical vulnerabilities.
@@ -190,7 +190,7 @@ In agentic commerce systems, planning without validation leads to hallucinated e
 
 ---
 
-## Decision 11: End-to-End Orchestration Integration with Member 1 Payments & Member 4 Persistence
+## Decision 19: End-to-End Orchestration Integration with Member 1 Payments & Member 4 Persistence
 
 ### 1. Context & Problem
 The Buyer agent cannot operate in a silo. Every paid invocation must interface with Member 1's payment engine (`BuyerPaymentClientInterface`, `PaymentPolicyVerifier`, `BudgetManager`, `SettlementVerifier`) and record immutable transaction history in Member 4's ledger repository (`ledger_repo` and SQLAlchemy `LedgerRecordModel`). Crucially:
@@ -218,7 +218,7 @@ The Buyer agent cannot operate in a silo. Every paid invocation must interface w
 
 ---
 
-## Decision 12: Dependency-Aware Asynchronous Execution, Strict Input Isolation, & Safe Fallbacks
+## Decision 20: Dependency-Aware Asynchronous Execution, Strict Input Isolation, & Safe Fallbacks
 
 ### 1. Context & Problem
 In complex agent workflows requiring Data (`data.lookup.v1`), Scraping (`scraping.extract.v1`), and Inference (`inference.summarize.v1`), naïve execution creates several failure modes:
@@ -242,7 +242,7 @@ In complex agent workflows requiring Data (`data.lookup.v1`), Scraping (`scrapin
 
 ---
 
-## Decision 13: Seller-Output Schema Validation, Transparent Aggregation, & Field-Level Provenance
+## Decision 21: Seller-Output Schema Validation, Transparent Aggregation, & Field-Level Provenance
 
 ### 1. Context & Problem
 In a decentralized pay-per-call agent economy, sellers may return responses with invalid content types (e.g. `text/html` error pages), malformed JSON, missing required fields, or type mismatches. If the buyer agent naively aggregates these responses or hallucinates missing data, downstream users receive corrupt findings. Furthermore, when a micropayment has already settled on-chain (`tx_hash` or facilitator receipt verified) but the delivered output is invalid, the buyer cannot silently erase the cost or claim the call was free; nor can it report the failure as a successful finding.
@@ -256,7 +256,7 @@ In a decentralized pay-per-call agent economy, sellers may return responses with
 
 ---
 
-## Decision 14: Authoritative Ledger Reconciliation, Itemized Spending Summaries, & Non-Fabricated Explorer Links
+## Decision 22: Authoritative Ledger Reconciliation, Itemized Spending Summaries, & Non-Fabricated Explorer Links
 
 ### 1. Context & Problem
 In agent marketplaces, users and auditors require transparent explanations of every micropayment. If the buyer agent derives verified spending from local in-memory counters or planned prices, discrepancies emerge between the buyer's reported total and Member 4's authoritative audit ledger. Furthermore, generating fake or illustrative explorer links for non-hash tokens or unsettled calls misleads users and undermines trust.
@@ -276,11 +276,8 @@ In agent marketplaces, users and auditors require transparent explanations of ev
   7. `remaining_budget_usdc`: Available unspent funds (`budget - verified_spent - uncertain_pending`).
 - **Strict Explorer Link Validation (Zero Fabrication):** Base Sepolia explorer links (`https://sepolia.basescan.org/tx/{tx_hash}`) are generated strictly when a verified 66-character hex hash starting with `0x` is present. Placeholder tokens, mock strings, or receipts return `None`.
 - **Fact-Based Service Selection Explanations:** Explanations cite actual registry reputation scores and median latencies when verified call history exists; when a service has no history, the narrative explicitly states `"No prior reputation history in ledger"` without hallucinating scores.
-
-
-
-
 ---
+
 
 ## Decision 13: Dual Package Namespace Compatibility (`backend/payments/` & `backend/app/payments/`)
 

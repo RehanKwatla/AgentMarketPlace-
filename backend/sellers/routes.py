@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -233,139 +233,92 @@ async def _verify_and_execute_seller(
 
     # 3. Verify Payment
     settlement_proof: Optional[str] = None
-    if verify_seller_payment is not None:
-        try:
-            verified_evidence = await verify_seller_payment(
-                service_id=service_id,
-                amount_units=amount_units,
-                pay_to=pay_to,
-                payment_payload_header=raw_payment_payload,
-                verifier=verifier,
-            )
-            if not verified_evidence or not isinstance(verified_evidence, str) or not verified_evidence.strip():
-                logger.warning(
-                    "verify_seller_payment returned empty proof for service %s (req=%s)",
-                    service_id, context.request_id
-                )
-                return JSONResponse(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    content={
-                        "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                        "message": "Payment authorization rejected: unconfirmed settlement proof.",
-                        "service_id": service_id,
-                        "request_id": context.request_id,
-                    },
-                )
-            settlement_proof = verified_evidence.strip()
-        except HTTPException as http_exc:
-            return JSONResponse(
-                status_code=http_exc.status_code,
-                content={
-                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                    "message": f"Payment authorization rejected: {http_exc.detail}",
-                    "service_id": service_id,
-                    "request_id": context.request_id,
-                },
-            )
-        except Exception as exc:
-            logger.warning("verify_seller_payment failed for service %s (req=%s): %s", service_id, context.request_id, exc)
-            return JSONResponse(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                content={
-                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                    "message": "Payment authorization verification failed.",
-                    "service_id": service_id,
-                    "request_id": context.request_id,
-                },
-            )
-    else:
-        # Fallback to direct SellerPaymentVerifierInterface
-        if verifier is None:
-            logger.error(
-                "Payment verification unavailable for service %s (req=%s). Concrete verifier not configured.",
-                service_id, context.request_id
-            )
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "error_code": "PAYMENT_VERIFIER_UNAVAILABLE",
-                    "message": (
-                        "Payment verification engine is pending Member 1 integration. "
-                        "Cannot process paid call without verified settlement."
-                    ),
-                    "service_id": service_id,
-                    "request_id": context.request_id,
-                },
-            )
-
-        requirement = PaymentRequirement(
-            version="2.0",
-            network=NETWORK_BASE_SEPOLIA,
-            token=USDC_BASE_SEPOLIA,
-            amount=str(amount_units),
-            payTo=pay_to,
-            nonce=nonce,
-            service_id=service_id,
+    if verifier is None:
+        logger.error(
+            "Payment verification unavailable for service %s (req=%s). Concrete verifier not configured.",
+            service_id, context.request_id
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error_code": "PAYMENT_VERIFIER_UNAVAILABLE",
+                "message": (
+                    "Payment verification engine is pending Member 1 integration. "
+                    "Cannot process paid call without verified settlement."
+                ),
+                "service_id": service_id,
+                "request_id": context.request_id,
+            },
         )
 
-        try:
-            receipt = await verifier.verify_and_settle(payment_payload, requirement)
-        except Exception as verif_err:
-            err_str = str(verif_err)
-            if any(s in err_str.lower() for s in ["password", "secret", "private", "postgres", "mysql", "redis", "mongodb"]):
-                logger.warning(
-                    "Payment verification failed for service %s (req=%s) with internal system error (redacted)",
-                    service_id, context.request_id
-                )
-                safe_msg = "Internal verification system error."
-            else:
-                logger.warning(
-                    "Payment verification failed for service %s (req=%s): %s",
-                    service_id, context.request_id, err_str
-                )
-                safe_msg = err_str
+    requirement = PaymentRequirement(
+        version="2.0",
+        network=NETWORK_BASE_SEPOLIA,
+        token=USDC_BASE_SEPOLIA,
+        amount=str(amount_units),
+        payTo=pay_to,
+        nonce=nonce,
+        service_id=service_id,
+    )
 
-            return JSONResponse(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                content={
-                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                    "message": f"Payment authorization rejected: {safe_msg}",
-                    "service_id": service_id,
-                    "request_id": context.request_id,
-                },
-            )
-
-        if receipt is None:
+    try:
+        receipt = await verifier.verify_and_settle(payment_payload, requirement)
+    except Exception as verif_err:
+        err_str = str(verif_err)
+        if any(s in err_str.lower() for s in ["password", "secret", "private", "postgres", "mysql", "redis", "mongodb"]):
             logger.warning(
-                "Payment verification returned no receipt for service %s (req=%s)",
+                "Payment verification failed for service %s (req=%s) with internal system error (redacted)",
                 service_id, context.request_id
             )
-            return JSONResponse(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                content={
-                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                    "message": "Payment authorization rejected: no settlement receipt produced.",
-                    "service_id": service_id,
-                    "request_id": context.request_id,
-                },
-            )
-
-        proof = getattr(receipt, "tx_hash", None) or getattr(receipt, "facilitator_receipt_id", None)
-        if not proof or not isinstance(proof, str) or not proof.strip():
+            safe_msg = "Internal verification system error."
+        else:
             logger.warning(
-                "Payment verification returned empty/invalid proof for service %s (req=%s)",
-                service_id, context.request_id
+                "Payment verification failed for service %s (req=%s): %s",
+                service_id, context.request_id, err_str
             )
-            return JSONResponse(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                content={
-                    "error_code": "PAYMENT_AUTHORIZATION_FAILED",
-                    "message": "Payment authorization rejected: unconfirmed settlement proof.",
-                    "service_id": service_id,
-                    "request_id": context.request_id,
-                },
-            )
-        settlement_proof = str(proof).strip()
+            safe_msg = err_str
+
+        return JSONResponse(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            content={
+                "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                "message": f"Payment authorization rejected: {safe_msg}",
+                "service_id": service_id,
+                "request_id": context.request_id,
+            },
+        )
+
+    if receipt is None:
+        logger.warning(
+            "Payment verification returned no receipt for service %s (req=%s)",
+            service_id, context.request_id
+        )
+        return JSONResponse(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            content={
+                "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                "message": "Payment authorization rejected: no settlement receipt produced.",
+                "service_id": service_id,
+                "request_id": context.request_id,
+            },
+        )
+
+    proof = getattr(receipt, "tx_hash", None) or getattr(receipt, "facilitator_receipt_id", None)
+    if not proof or not isinstance(proof, str) or not proof.strip():
+        logger.warning(
+            "Payment verification returned empty/invalid proof for service %s (req=%s)",
+            service_id, context.request_id
+        )
+        return JSONResponse(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            content={
+                "error_code": "PAYMENT_AUTHORIZATION_FAILED",
+                "message": "Payment authorization rejected: unconfirmed settlement proof.",
+                "service_id": service_id,
+                "request_id": context.request_id,
+            },
+        )
+    settlement_proof = str(proof).strip()
 
     # 4. Execute Service via BaseSellerService lifecycle only AFTER verified settlement
     try:
