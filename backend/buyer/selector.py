@@ -164,6 +164,40 @@ class ServiceSelector:
 
         Hard eligibility MUST already be verified. A high ranking never overrides an eligibility failure.
         """
+        # Apply the same deterministic, ledger-backed ranking shown by the
+        # registry recommendation API after this selector's hard gates pass.
+        if eligible_candidates:
+            try:
+                from backend.registry.recommendation import RecommendationEngine, RecommendationRequest
+                recommendation = RecommendationEngine(registry=self.registry).evaluate_and_rank(
+                    RecommendationRequest(
+                        task_prompt=task_intent or "",
+                        category=eligible_candidates[0].category,
+                    )
+                )
+                positions = {item["service_id"]: item for item in recommendation["recommendations"]}
+                ranked_by_recommendation = []
+                for service in eligible_candidates:
+                    item = positions.get(service.service_id)
+                    if item is None:
+                        continue
+                    factor_scores = item["factor_scores"]
+                    reason = (
+                        f"Selected {service.service_id} by registry recommendation "
+                        f"(score={item['weighted_score']:.3f}; capability={factor_scores['capability_match']:.2f}, "
+                        f"observed output validity={factor_scores['output_validity']:.2f}, "
+                        f"observed reliability={factor_scores['reliability']:.2f}, "
+                        f"price={service.price_atomic} base units)."
+                    )
+                    ranked_by_recommendation.append((service, item["weighted_score"] * 100.0, reason))
+                if ranked_by_recommendation:
+                    ranked_by_recommendation.sort(key=lambda row: (-row[1], row[0].price_atomic, row[0].service_id))
+                    return ranked_by_recommendation
+            except Exception:
+                # Preserve existing selector behavior if telemetry is unavailable;
+                # hard eligibility checks have already completed above.
+                pass
+
         ranked = []
         for s in eligible_candidates:
             # 1. Relevance: base 1.0, boosted if intent matches description, name, or capability tags

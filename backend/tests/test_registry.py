@@ -84,13 +84,12 @@ def test_registry_text_search(client):
 
 def test_registry_price_filtering(client):
     """Test min_price_usdc and max_price_usdc filtering."""
-    # Max price 0.0025 should include data_001 (0.002), but not scraping (0.003) or inference (0.004)
+    # Integer prices include the two data services at or below 0.0025 USDC.
     response = client.get("/api/v1/services?max_price_usdc=0.0025")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     items = data.get("services") or data.get("items")
-    assert len(items) == 1
-    assert items[0]["service_id"] == "data_001"
+    assert {item["service_id"] for item in items} == {"data_001", "data_002"}
 
     # Min price 0.0035 should include inference_001 (0.004)
     response_min = client.get("/api/v1/services?min_price_usdc=0.0035")
@@ -99,6 +98,41 @@ def test_registry_price_filtering(client):
     items_min = data_min.get("services") or data_min.get("items")
     assert len(items_min) == 1
     assert items_min[0]["service_id"] == "inference_001"
+
+
+def test_registry_has_nine_unique_differentiated_profiles(client):
+    response = client.get("/api/v1/services?limit=100")
+    assert response.status_code == status.HTTP_200_OK
+    services = response.json()["services"]
+    assert len(services) == 9
+    assert len({item["service_id"] for item in services}) == 9
+    assert {category: sum(item["category"] == category for item in services)
+            for category in ("data", "scraping", "inference")} == {"data": 3, "scraping": 3, "inference": 3}
+    assert len({item["price_base_units"] for item in services}) > 3
+    assert all(item["price_base_units"] > 0 and item["pay_to"].startswith("0x") for item in services)
+
+
+def test_duplicate_service_id_is_rejected():
+    service = registry_service.get_service("data_001")
+    with pytest.raises(ValueError, match="already registered"):
+        registry_service.register_service(service)
+
+
+def test_recommendation_has_honest_new_evidence_and_hard_filters(client):
+    response = client.post("/api/v1/services/recommendations", json={
+        "task_prompt": "Find an agent for current market prices",
+        "category": "data",
+        "required_capabilities": ["crypto.market.rates"],
+        "max_budget_usdc": "0.003000",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["recommendations"]
+    assert all(c["performance"]["evidence_status"] in {"NEW", "INSUFFICIENT_DATA", "VERIFIED"}
+               for c in data["recommendations"])
+    assert all(c["performance"]["success_rate"] is None or c["performance"]["sample_size"] > 0
+               for c in data["recommendations"])
+    assert any(c["service_id"] == "data_003" for c in data["rejected_candidates"])
 
 
 def test_service_not_found(client):

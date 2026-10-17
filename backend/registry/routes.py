@@ -8,8 +8,15 @@ from backend.registry.schemas import (
     ServiceReputationSummary,
 )
 from backend.registry.service import registry_service
+from backend.registry.recommendation import RecommendationRequest, recommendation_engine
 
 router = APIRouter(prefix="/api/v1/services", tags=["Service Registry"])
+
+
+@router.post("/recommendations", summary="Rank eligible registered agents")
+async def recommend_services(request: RecommendationRequest):
+    """Return a deterministic candidate ranking; this endpoint does not initiate payment."""
+    return recommendation_engine.evaluate_and_rank(request)
 
 
 @router.get(

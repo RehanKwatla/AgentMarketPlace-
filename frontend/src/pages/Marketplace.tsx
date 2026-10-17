@@ -18,6 +18,7 @@ import { ServiceDefinition } from '../types';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ServiceCard } from '../components/ServiceCard';
 import { EmptyState } from '../components/ui/EmptyState';
+import { fetchRecommendations } from '../api/client';
 
 export const Marketplace: React.FC = () => {
   const navigate = useNavigate();
@@ -40,6 +41,25 @@ export const Marketplace: React.FC = () => {
   const [sortBy, setSortBy] = useState<'price_asc' | 'price_desc' | 'reputation' | 'calls' | 'name'>('price_asc');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [recommendationTask, setRecommendationTask] = useState('Find a reliable agent for market data');
+  const [recommendation, setRecommendation] = useState<any>(null);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [isRecommending, setIsRecommending] = useState(false);
+
+  const runRecommendation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsRecommending(true);
+    setRecommendationError(null);
+    try {
+      const category = /scrap|web|page|document/i.test(recommendationTask) ? 'scraping'
+        : /summar|infer|classif|compar|reason/i.test(recommendationTask) ? 'inference' : 'data';
+      setRecommendation(await fetchRecommendations({ task_prompt: recommendationTask, category, max_budget_usdc: '0.05' }));
+    } catch (error: any) {
+      setRecommendationError(error.message || 'Could not calculate recommendation');
+    } finally {
+      setIsRecommending(false);
+    }
+  };
 
   // Sync global search from context if updated externally
   React.useEffect(() => {
@@ -200,6 +220,27 @@ export const Marketplace: React.FC = () => {
           </div>
         }
       />
+
+      <section className="rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] p-5 space-y-3" aria-label="Recommendation inspection">
+        <div>
+          <h2 className="text-sm font-semibold text-[#241B19]">Recommendation inspection</h2>
+          <p className="text-xs text-[#82786F]">Ranking is computed by the registry API. A recommendation does not authorize payment.</p>
+        </div>
+        <form onSubmit={runRecommendation} className="flex flex-wrap gap-2">
+          <input aria-label="Task for recommendation" value={recommendationTask} onChange={e => setRecommendationTask(e.target.value)} className="min-w-[240px] flex-1 rounded-md border border-[#CFC7BB] bg-white px-3 py-2 text-sm" />
+          <button disabled={isRecommending} className="rounded-md bg-[#7D292D] px-4 py-2 text-sm text-white disabled:opacity-60">{isRecommending ? 'Ranking…' : 'Rank candidates'}</button>
+        </form>
+        {recommendationError && <p role="alert" className="text-sm text-red-700">{recommendationError}</p>}
+        {recommendation && <div className="space-y-2 text-sm">
+          <p className="text-[#82786F]">{recommendation.explanation_summary}</p>
+          <div className="grid gap-2 md:grid-cols-3">{recommendation.recommendations.map((candidate: any) => <article key={candidate.service_id} className="rounded-lg border border-[#CFC7BB] bg-white p-3">
+            <div className="flex justify-between gap-2"><strong>{candidate.rank}. {candidate.name}</strong><span>{candidate.price_usdc} USDC</span></div>
+            <p className="mt-1 text-xs">Score {candidate.weighted_score.toFixed(3)} · {candidate.performance.evidence_status} · {candidate.performance.sample_size} ledger records</p>
+            <p className="mt-1 text-xs text-[#82786F]">Success: {candidate.performance.success_rate === null ? 'NEW' : `${(candidate.performance.success_rate * 100).toFixed(1)}%`} · Median observed latency: {candidate.performance.median_latency_ms === null ? 'NEW' : `${candidate.performance.median_latency_ms} ms`}</p>
+          </article>)}</div>
+          {recommendation.rejected_candidates.length > 0 && <details><summary className="cursor-pointer text-xs">Rejected alternatives ({recommendation.rejected_candidates.length})</summary><ul className="mt-1 list-disc pl-5 text-xs">{recommendation.rejected_candidates.map((candidate: any) => <li key={candidate.service_id}>{candidate.name}: {candidate.rejection_reasons.join('; ')}</li>)}</ul></details>}
+        </div>}
+      </section>
 
       {/* 2. Category Selector Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[#CFC7BB]/60 pb-3">

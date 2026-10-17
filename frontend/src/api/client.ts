@@ -62,6 +62,21 @@ export async function fetchServiceById(serviceId: string): Promise<ServiceDefini
   return res.json();
 }
 
+export async function fetchRecommendations(payload: {
+  task_prompt?: string;
+  category?: string;
+  required_capabilities?: string[];
+  max_budget_usdc?: string;
+}): Promise<any> {
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/services/recommendations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Recommendation failed: ${res.statusText}`);
+  return res.json();
+}
+
 export interface SubmitBuyerTaskOptions {
   task: string;
   budget_usdc: string;

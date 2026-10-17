@@ -216,12 +216,65 @@ class RegistryService:
         ]
 
         for s in seed_sellers:
+            # Historical figures previously embedded in seed metadata were not
+            # backed by this checkout's ledger. Keep performance evidence empty.
+            s.reputation = None
             self.register_service(s)
+
+        # These are differentiated local reference profiles. They route to the
+        # existing category implementation and therefore are not independent
+        # providers or empirically measured services.
+        reference_profiles = [
+            ("data_002", "Beta Market Indicators [LOCAL REFERENCE]", ServiceCategory.DATA,
+             ["data.lookup.v1", "crypto.market.rates", "crypto.market.indicators"],
+             "[LOCAL REFERENCE] Market rates and indicator metadata; uses the local data seller.", "0.001500", 1500, 260,
+             ["crypto", "market-data", "indicators", "technical-analysis"]),
+            ("data_003", "Historical Time Series [LOCAL REFERENCE]", ServiceCategory.DATA,
+             ["data.lookup.v1", "crypto.market.history", "time-series"],
+             "[LOCAL REFERENCE] Historical/time-series profile; uses the local data seller and does not claim historical feeds.", "0.005000", 5000, 1100,
+             ["historical", "time-series", "market-data", "candles"]),
+            ("scraping_002", "Page Metadata Extractor [LOCAL REFERENCE]", ServiceCategory.SCRAPING,
+             ["scraping.extract.v1", "web.metadata.extract"],
+             "[LOCAL REFERENCE] Page content and metadata profile; uses the local scraping seller.", "0.002500", 2500, 900,
+             ["web", "metadata", "title", "description"]),
+            ("scraping_003", "Documentation Research Extractor [LOCAL REFERENCE]", ServiceCategory.SCRAPING,
+             ["scraping.extract.v1", "docs.research.extract"],
+             "[LOCAL REFERENCE] Documentation/research extraction profile; uses the local scraping seller.", "0.004000", 4000, 1400,
+             ["documentation", "research", "web", "extraction"]),
+            ("inference_002", "Structured Analysis Engine [LOCAL REFERENCE]", ServiceCategory.INFERENCE,
+             ["inference.summarize.v1", "inference.structured-analysis.v1"],
+             "[LOCAL REFERENCE] Structured analysis profile; uses the local inference seller.", "0.006000", 6000, 1200,
+             ["inference", "structured", "analysis", "json"]),
+            ("inference_003", "Classification and Comparison Engine [LOCAL REFERENCE]", ServiceCategory.INFERENCE,
+             ["inference.summarize.v1", "inference.classify.v1", "inference.compare.v1"],
+             "[LOCAL REFERENCE] Classification/comparison profile; uses the local inference seller.", "0.003000", 3000, 600,
+             ["inference", "classification", "comparison", "ranking"]),
+        ]
+        templates = {s.category: s for s in seed_sellers}
+        for sid, name, category, capabilities, description, price, units, latency, tags in reference_profiles:
+            template = templates[category]
+            self.register_service(template.model_copy(update={
+                "service_id": sid,
+                "name": name,
+                "capabilities": capabilities,
+                "description": description,
+                "price_usdc": price,
+                "price_atomic": units,
+                "is_demo_seed": True,
+                "reputation": None,
+                "capability_metadata": template.capability_metadata.model_copy(update={
+                    "tags": tags,
+                    "sla_latency_p95_ms": latency,
+                    "constraints": {**template.capability_metadata.constraints, "timeout_seconds": max(5, latency // 100), "max_retries": 0, "local_reference": True},
+                }),
+            }))
 
     def register_service(self, service: ServiceRecord) -> None:
         """Register or update a service record with strict server-side schema validation."""
         validate_service_registration(service.model_dump())
         primary_id = service.service_id
+        if primary_id in self._services:
+            raise ValueError(f"Service ID '{primary_id}' is already registered")
         self._services[primary_id] = service
 
         # Register normalized aliases (e.g. data_001 <-> data-001)
@@ -266,17 +319,18 @@ class RegistryService:
                     reputation_score=metrics.reputation_score,
                     success_rate=metrics.success_rate,
                     median_latency_ms=metrics.median_latency_ms,
-                    latency_p95_ms=service.reputation.latency_p95_ms if service.reputation else 120.0,
+                    latency_p95_ms=service.reputation.latency_p95_ms if service.reputation else 0.0,
                     total_calls=metrics.total_calls,
                     successful_calls=metrics.successful_calls,
                     paid_output_rejected_calls=metrics.schema_invalid_counts,
-                    listed_price_usdc=service.price_usdc
+                    listed_price_usdc=service.price_usdc,
+                    evidence_status="VERIFIED" if metrics.total_calls >= 20 else "INSUFFICIENT_DATA",
                 )
         except Exception:
             pass
 
         # Fallback to recorded reputation summary
-        rep = service.reputation or ServiceReputationSummary(listed_price_usdc=service.price_usdc)
+        rep = service.reputation or ServiceReputationSummary(listed_price_usdc=service.price_usdc, evidence_status="NEW")
         rep.service_id = service.service_id
         return rep
 

@@ -13,15 +13,16 @@ from backend.shared.schemas import CapabilityMetadata
 
 class ServiceReputationSummary(BaseModel):
     service_id: Optional[str] = None
-    reputation_score: float = Field(default=98.0, ge=0.0, le=100.0)
-    success_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    reputation_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     median_latency_ms: float = Field(default=0.0, ge=0.0)
-    latency_p95_ms: float = Field(default=120.0, ge=0.0)
+    latency_p95_ms: float = Field(default=0.0, ge=0.0)
     total_calls: int = Field(default=0, ge=0)
     successful_calls: int = Field(default=0, ge=0)
     paid_output_rejected_calls: int = Field(default=0, ge=0)
     listed_price_usdc: str = Field(default="0.002000")
     last_call_at: Optional[str] = None
+    evidence_status: str = "NEW"
 
 
 class ServiceRecord(BaseModel):
