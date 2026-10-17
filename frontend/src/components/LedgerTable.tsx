@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LedgerRecord } from '../types';
+import { LedgerRecord, getBaseSepoliaExplorerUrl } from '../types';
 import { StatusBadge } from './ReputationBadge';
 import { ExternalLink, Filter } from 'lucide-react';
 
@@ -35,8 +35,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   });
 
   const getExplorerUrl = (txHash: string | null) => {
-    if (!txHash) return null;
-    return `https://sepolia.basescan.org/tx/${txHash}`;
+    return getBaseSepoliaExplorerUrl(txHash);
   };
 
   return (
@@ -151,8 +150,13 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                             <span>{record.tx_hash?.slice(0, 10)}...</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
+                        ) : record.tx_hash ? (
+                          <span className="text-[#A3A3A3] font-mono text-[11px]" title={record.tx_hash}>
+                            {record.tx_hash.startsWith('rec_') ? 'Receipt: ' : 'Proof: '}
+                            {record.tx_hash.slice(0, 8)}...
+                          </span>
                         ) : (
-                          <span className="text-[#737373] font-mono text-[11px]">Testnet Proof</span>
+                          <span className="text-[#737373] font-mono text-[11px]">—</span>
                         )}
                       </td>
 

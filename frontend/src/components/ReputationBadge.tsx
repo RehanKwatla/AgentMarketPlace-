@@ -11,23 +11,41 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
   let dotStyle = 'bg-[#737373]';
   let label = status;
 
-  if (status === 'paid' || status === 'completed') {
+  const s = String(status).toLowerCase().trim();
+
+  if (s === 'verified on-chain') {
+    badgeStyle = 'bg-[rgba(163, 163, 163,0.15)] text-[#FAFAFA] border-[rgba(255, 255, 255,0.4)]';
+    dotStyle = 'bg-[#FFFFFF]';
+    label = 'Verified On-Chain';
+  } else if (s === 'verified facilitator receipt') {
+    badgeStyle = 'bg-[rgba(163, 163, 163,0.12)] text-[#A3A3A3] border-[rgba(163, 163, 163,0.3)]';
+    dotStyle = 'bg-[#A3A3A3]';
+    label = 'Verified Facilitator Receipt';
+  } else if (s === 'simulated' || s === 'simulated settlement') {
+    badgeStyle = 'bg-[rgba(115, 115, 115,0.15)] text-[#A3A3A3] border-[rgba(115, 115, 115,0.3)]';
+    dotStyle = 'bg-[#737373]';
+    label = 'Simulated Settlement';
+  } else if (s === 'paid' || s === 'completed') {
     badgeStyle = 'bg-[rgba(163, 163, 163,0.12)] text-[#A3A3A3] border-[rgba(163, 163, 163,0.3)]';
     dotStyle = 'bg-[#A3A3A3]';
     label = 'Verified Paid / Settled';
-  } else if (status === 'paid output rejected') {
+  } else if (s === 'paid output rejected' || s === 'paid_output_rejected') {
     badgeStyle = 'bg-[rgba(163, 163, 163,0.12)] text-[#A3A3A3] border-[rgba(163, 163, 163,0.3)]';
     dotStyle = 'bg-[#A3A3A3]';
-    label = 'Paid (Output Rejected)';
-  } else if (status === 'refused') {
+    label = 'Paid / Output Rejected';
+  } else if (s === 'refused') {
     badgeStyle = 'bg-[rgba(115, 115, 115,0.12)] text-[#737373] border-[rgba(115, 115, 115,0.3)]';
     dotStyle = 'bg-[#737373]';
     label = 'Refused Before Payment';
-  } else if (status === 'failed and not charged') {
+  } else if (s === 'failed and not charged' || s === 'failed_and_not_charged') {
     badgeStyle = 'bg-[#141414] text-[#737373] border-[rgba(255, 255, 255,0.20)]';
     dotStyle = 'bg-[#737373]';
-    label = 'Failed (No Charge)';
-  } else if (status === 'pending' || status === 'in_progress') {
+    label = 'Failed / Not Charged';
+  } else if (s === 'pending reconciliation' || s === 'pending_reconciliation') {
+    badgeStyle = 'bg-[rgba(255, 255, 255,0.12)] text-[#FFFFFF] border-[rgba(255, 255, 255,0.3)]';
+    dotStyle = 'bg-[#FFFFFF] animate-pulse';
+    label = 'Pending Reconciliation';
+  } else if (s === 'pending' || s === 'in_progress') {
     badgeStyle = 'bg-[rgba(255, 255, 255,0.12)] text-[#FFFFFF] border-[rgba(255, 255, 255,0.3)]';
     dotStyle = 'bg-[#FFFFFF] animate-ping';
     label = 'Reconciling / In Flight';

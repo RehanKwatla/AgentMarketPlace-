@@ -233,3 +233,123 @@ async def test_concurrent_budget_reservations_with_durable_storage():
     # Verify durable storage contains all 10 active reservations
     active_in_db = repo.get_task_reserved_amount(task_id)
     assert active_in_db == 10_000
+
+
+def test_genuine_subprocess_process_restart_recovery_level2():
+    """LEVEL 2 Process Restart: Spawn separate child processes against an isolated DB to verify state recovery."""
+    import os
+    import tempfile
+    import subprocess
+    import sys
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "restart_level2.db").replace("\\", "/")
+        db_url = f"sqlite:///{db_path}"
+
+        # Child Process 1: Writer
+        writer_script = f'''
+import os, sys, json
+from datetime import datetime, timezone
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from backend.database.session import Base
+from backend.payments.models import PaymentAttemptModel, BudgetReservationModel
+from backend.payments.schemas import PaymentStatus
+
+engine = create_engine("{db_url}")
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+
+with Session() as s:
+    att = PaymentAttemptModel(
+        attempt_id="att_p2_01",
+        task_id="task_p2",
+        call_id="call_p2",
+        service_id="scraping_001",
+        idempotency_key="key_p2_01",
+        request_hash="hash_p2_01",
+        nonce="nonce_p2_01",
+        amount_units=2000,
+        status=PaymentStatus.PAID.value,
+        response_json=json.dumps({{"result": "success_p2"}}),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
+    s.add(att)
+    att_pending = PaymentAttemptModel(
+        attempt_id="att_p2_pending",
+        task_id="task_p2",
+        call_id="call_p2_pend",
+        service_id="data_001",
+        idempotency_key="key_p2_pending",
+        request_hash="hash_p2_pending",
+        nonce="nonce_p2_pending",
+        amount_units=3000,
+        status=PaymentStatus.PENDING_RECONCILIATION.value,
+        error_code="SETTLEMENT_TIMEOUT",
+        error_reason="Network timeout during settlement",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
+    s.add(att_pending)
+    res = BudgetReservationModel(
+        reservation_id="res_p2_01",
+        task_id="task_p2",
+        call_id="call_p2",
+        amount_base_units=5000,
+        status="reserved",
+        created_at=datetime.now(timezone.utc)
+    )
+    s.add(res)
+    s.commit()
+print("WRITER_SUCCESS")
+'''
+        res1 = subprocess.run([sys.executable, "-c", writer_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd="c:/AgentMarket")
+        assert res1.returncode == 0, f"Writer process failed: {res1.stderr}"
+        assert "WRITER_SUCCESS" in res1.stdout
+
+        # Child Process 2: Fresh Reader/Verifier Process
+        reader_script = f'''
+import sys
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from backend.payments.models import DurablePaymentRepository
+from backend.payments.idempotency import IdempotencyStore, IdempotencyConflictError, ReplayAttackDetectedError
+from backend.payments.service import PaymentService
+from backend.payments.schemas import PaymentStatus
+
+engine = create_engine("{db_url}")
+Session = sessionmaker(bind=engine)
+repo = DurablePaymentRepository(session_factory=Session)
+
+store = IdempotencyStore(repo=repo)
+is_new, cached = store.check_or_register("key_p2_01", "hash_p2_01")
+assert is_new is False, "Expected idempotency cache hit across process restart"
+assert cached == {{"result": "success_p2"}}
+
+try:
+    store.check_or_register("key_p2_01", "mutated_hash")
+    sys.exit(1)
+except IdempotencyConflictError:
+    pass
+
+try:
+    store.record_and_verify_nonce("nonce_p2_01")
+    sys.exit(2)
+except ReplayAttackDetectedError:
+    pass
+
+svc = PaymentService(durable_repo=repo)
+pending = svc.get_pending_reconciliations()
+assert "att_p2_pending" in pending
+assert pending["att_p2_pending"].status == PaymentStatus.PENDING_RECONCILIATION
+
+reserved_amt = repo.get_task_reserved_amount("task_p2")
+assert reserved_amt == 5000, f"Expected 5000 reserved, got {{reserved_amt}}"
+
+print("READER_SUCCESS")
+'''
+        res2 = subprocess.run([sys.executable, "-c", reader_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd="c:/AgentMarket")
+        assert res2.returncode == 0, f"Reader process failed: {res2.stderr}"
+        assert "READER_SUCCESS" in res2.stdout
+
