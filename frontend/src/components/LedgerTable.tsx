@@ -27,7 +27,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ records }) => {
               <th className="px-4 py-3">Amount</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Latency</th>
-              <th className="px-4 py-3">Tx Hash</th>
+              <th className="px-4 py-3">Settlement Evidence</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -44,9 +44,19 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ records }) => {
                 </td>
                 <td className="px-4 py-3 text-slate-400">{r.latency_ms.toFixed(1)} ms</td>
                 <td className="px-4 py-3 text-slate-400">
-                  {r.tx_hash ? (
-                    <span className="text-blue-400 underline cursor-pointer" title={r.tx_hash}>
-                      {r.tx_hash.slice(0, 10)}...
+                  {r.tx_hash?.startsWith('rec_auth_') ? (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 border border-slate-700"
+                      title={`Local Authorization Receipt: ${r.tx_hash} (Awaiting On-Chain Broadcast)`}
+                    >
+                      Local Auth ({r.tx_hash.slice(0, 14)}...)
+                    </span>
+                  ) : r.tx_hash?.startsWith('0x') ? (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-amber-950/40 text-amber-300 border border-amber-800/40"
+                      title={`Unverified Base Sepolia Tx Hash: ${r.tx_hash} (Awaiting Live RPC Confirmation)`}
+                    >
+                      Unverified Hash ({r.tx_hash.slice(0, 10)}...)
                     </span>
                   ) : (
                     <span className="text-slate-600">—</span>
@@ -54,6 +64,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ records }) => {
                 </td>
               </tr>
             ))}
+
           </tbody>
         </table>
       </div>

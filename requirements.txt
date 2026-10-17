@@ -10,7 +10,8 @@ httpx>=0.27.0
 # Database & ORM
 SQLAlchemy>=2.0.30
 aiosqlite>=0.20.0
-# psycopg2-binary>=2.9.9 # Uncomment for PostgreSQL production deployment
+psycopg2-binary>=2.9.9
+
 
 # Web3 & Cryptography
 web3>=6.19.0

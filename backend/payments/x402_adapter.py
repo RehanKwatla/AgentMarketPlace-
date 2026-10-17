@@ -65,14 +65,19 @@ class X402Adapter:
         self,
         policy_verifier: Optional[PaymentPolicyVerifier] = None,
         timeout_seconds: Optional[float] = None,
-        test_mode: bool = False,
+        test_mode: Optional[bool] = None,
+        signature_scheme: str = "personal_sign",
     ):
         settings = get_settings()
         self.policy_verifier = policy_verifier or PaymentPolicyVerifier()
         self.timeout_seconds = timeout_seconds or settings.x402_client_timeout_seconds
         self.buyer_address = settings.buyer_wallet_address
         self.buyer_private_key = settings.buyer_private_key
-        self.test_mode = test_mode
+        if test_mode is not None:
+            self.test_mode = test_mode
+        else:
+            self.test_mode = settings.environment.lower() in ("test", "testing", "dev", "development")
+        self.signature_scheme = signature_scheme
 
     # -------------------------------------------------------------------------
     # Official x402 SDK Schema & Header Translation Methods
@@ -95,6 +100,9 @@ class X402Adapter:
                     extra={
                         "nonce": requirement.nonce,
                         "service_id": requirement.service_id,
+                        "name": "USDC",
+                        "version": "2",
+                        "assetTransferMethod": "eip3009",
                     }
                 )
             ]
@@ -122,29 +130,66 @@ class X402Adapter:
         payload_dict: Dict[str, Any],
         requirement: PaymentRequirement
     ) -> Any:
-        """Translate application payment payload to official x402 PaymentPayload object."""
+        """Translate application payment payload to official x402 PaymentPayload object conforming to ExactEIP3009Payload."""
         if not OFFICIAL_X402_AVAILABLE:
             raise PaymentEngineError("Official x402 SDK is not installed in the active environment.")
         official_req = self.to_official_payment_required(requirement).accepts[0]
         auth = payload_dict.get("authorization", payload_dict)
         sig = payload_dict.get("signature", "")
+
+        # Reflect any custom or mismatched network/asset from authorization into the official accepted terms
+        if isinstance(auth, dict):
+            if auth.get("network"):
+                official_req.network = auth["network"]
+            if auth.get("token"):
+                official_req.asset = auth["token"]
+
+        from_addr = auth.get("from") or auth.get("from_address") or payload_dict.get("buyer_address") or self.buyer_address or "0x0000000000000000000000000000000000000000"
+        to_addr = auth.get("to") or auth.get("payTo") or requirement.payTo
+        val_str = str(auth.get("value") if auth.get("value") is not None else (auth.get("amount") if auth.get("amount") is not None else requirement.amount))
+        valid_after_str = str(auth.get("validAfter", "0"))
+        valid_before_str = str(auth.get("validBefore", str(int(time.time()) + 3600)))
+        raw_nonce = str(auth.get("nonce") or requirement.nonce or uuid.uuid4().hex)
+
+        if raw_nonce.startswith("0x") and len(raw_nonce) == 66:
+            nonce_hex = raw_nonce
+        else:
+            n_part = uuid.uuid5(uuid.NAMESPACE_DNS, raw_nonce).hex + uuid.uuid4().hex
+            nonce_hex = f"0x{n_part[:64]}"
+
+        # Canonical EIP-3009 payload for official x402 EVM exact facilitator & client
+        official_payload_inner = {
+            "authorization": {
+                "from": from_addr,
+                "to": to_addr,
+                "value": val_str,
+                "validAfter": valid_after_str,
+                "validBefore": valid_before_str,
+                "nonce": nonce_hex,
+            },
+            "signature": sig,
+        }
+
         return OfficialPaymentPayload(
             x402_version=2,
             accepted=official_req,
-            payload={
-                "authorization": auth,
-                "signature": sig,
-            },
+            payload=official_payload_inner,
             extensions={"signature": sig} if sig else None,
         )
 
     def from_official_payment_payload(self, pl: Any) -> Dict[str, Any]:
         """Translate official x402 PaymentPayload object to application payload dictionary."""
         payload_data = pl.payload if isinstance(pl.payload, dict) else {}
-        auth = payload_data.get("authorization", payload_data)
+        auth = dict(payload_data.get("authorization", payload_data))
         sig = payload_data.get("signature", "")
         if not sig and pl.extensions:
             sig = pl.extensions.get("signature", "")
+        # Preserve network and token from accepted requirements in application authorization
+        if hasattr(pl, "accepted") and pl.accepted:
+            if hasattr(pl.accepted, "network") and pl.accepted.network:
+                auth["network"] = pl.accepted.network
+            if hasattr(pl.accepted, "asset") and pl.accepted.asset:
+                auth["token"] = pl.accepted.asset
         return {
             "authorization": auth,
             "signature": sig,
@@ -262,17 +307,28 @@ class X402Adapter:
         requirement: PaymentRequirement,
         idempotency_key: str
     ) -> Dict[str, Any]:
-        """Construct compliant EIP-712 payment authorization payload for Base Sepolia USDC."""
+        """Construct compliant EIP-712 / EIP-3009 payment authorization payload for Base Sepolia USDC."""
         now = int(time.time())
         valid_until = now + 3600  # 1 hour validity
 
-        # EIP-712 Permit2 / TransferWithAuthorization parameters
+        raw_nonce = requirement.nonce or uuid.uuid4().hex
+        if raw_nonce.startswith("0x") and len(raw_nonce) == 66:
+            nonce_hex = raw_nonce
+        else:
+            n_part = uuid.uuid5(uuid.NAMESPACE_DNS, raw_nonce).hex + uuid.uuid4().hex
+            nonce_hex = f"0x{n_part[:64]}"
+
+        # Dual-compatible authorization dictionary containing both canonical EIP-3009 fields
+        # and existing application contract fields
         authorization = {
             "network": requirement.network,
             "token": requirement.token,
             "payTo": requirement.payTo,
             "amount": requirement.amount,
-            "nonce": requirement.nonce,
+            "from": self.buyer_address,
+            "to": requirement.payTo,
+            "value": requirement.amount,
+            "nonce": nonce_hex,
             "validAfter": now - 60,
             "validBefore": valid_until,
             "idempotencyKey": idempotency_key,
@@ -286,12 +342,328 @@ class X402Adapter:
             "buyer_address": self.buyer_address,
         }
 
+    def build_eip3009_message(
+        self,
+        authorization: Dict[str, Any],
+        requirement: Optional[PaymentRequirement] = None
+    ) -> Dict[str, Any]:
+        """Construct official EIP-3009 TransferWithAuthorization structured typed data for Base Sepolia USDC.
+
+        Conforms exactly to official x402 EVM exact mechanism specification:
+        - Domain: name="USDC", version="2", chainId=84532, verifyingContract=USDC_BASE_SEPOLIA
+        - Types: TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)
+        """
+        from_addr = (
+            authorization.get("from")
+            or authorization.get("from_address")
+            or self.buyer_address
+            or "0x0000000000000000000000000000000000000000"
+        )
+        to_addr = authorization.get("to") or authorization.get("payTo") or (requirement.payTo if requirement else "")
+        val = int(authorization.get("value") if authorization.get("value") is not None else (authorization.get("amount") if authorization.get("amount") is not None else (requirement.amount if requirement else 0)))
+        valid_after = int(authorization.get("validAfter", 0))
+        valid_before = int(authorization.get("validBefore", int(time.time()) + 3600))
+        token = authorization.get("token") or (requirement.token if requirement else USDC_BASE_SEPOLIA)
+        raw_nonce = str(authorization.get("nonce") or (requirement.nonce if requirement else uuid.uuid4().hex))
+
+        if raw_nonce.startswith("0x") and len(raw_nonce) == 66:
+            nonce_bytes = bytes.fromhex(raw_nonce[2:])
+        else:
+            nonce_hex = uuid.uuid5(uuid.NAMESPACE_DNS, raw_nonce).hex + uuid.uuid4().hex
+            nonce_bytes = bytes.fromhex(nonce_hex[:64])
+
+        chain_id = 84532
+        net = authorization.get("network") or (requirement.network if requirement else NETWORK_BASE_SEPOLIA)
+        if ":" in net:
+            try:
+                chain_id = int(net.split(":")[-1])
+            except (ValueError, TypeError):
+                chain_id = 84532
+
+        return {
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                ],
+                "TransferWithAuthorization": [
+                    {"name": "from", "type": "address"},
+                    {"name": "to", "type": "address"},
+                    {"name": "value", "type": "uint256"},
+                    {"name": "validAfter", "type": "uint256"},
+                    {"name": "validBefore", "type": "uint256"},
+                    {"name": "nonce", "type": "bytes32"},
+                ],
+            },
+            "primaryType": "TransferWithAuthorization",
+            "domain": {
+                "name": "USDC",
+                "version": "2",
+                "chainId": chain_id,
+                "verifyingContract": token,
+            },
+            "message": {
+                "from": from_addr,
+                "to": to_addr,
+                "value": val,
+                "validAfter": valid_after,
+                "validBefore": valid_before,
+                "nonce": nonce_bytes,
+            },
+        }
+
+    def sign_eip3009_authorization(
+        self,
+        authorization: Dict[str, Any],
+        private_key: Optional[str] = None
+    ) -> str:
+        """Sign canonical EIP-3009 authorization using EIP-712 structured typed data."""
+        self._validate_live_signing_credentials(authorization, private_key)
+        key = private_key or self.buyer_private_key
+        if not key:
+            raise PaymentEngineError("Cannot sign EIP-3009 typed data: private key is not configured.")
+        if not key.startswith("0x"):
+            key = f"0x{key}"
+        if len(key) != 66:
+            raise PaymentEngineError("Invalid private key: must be a 66-character hex string (0x...).")
+
+        try:
+            from eth_account import Account
+            from eth_account.messages import encode_typed_data
+        except ImportError:
+            raise PaymentEngineError("Cannot sign EIP-3009: 'eth_account' dependency is missing.")
+
+        try:
+            full_msg = self.build_eip3009_message(authorization)
+            signable_msg = encode_typed_data(full_message=full_msg)
+            signed = Account.sign_message(signable_msg, private_key=key)
+            sig_hex = signed.signature.hex()
+            return sig_hex if sig_hex.startswith("0x") else f"0x{sig_hex}"
+        except Exception as exc:
+            raise PaymentEngineError(f"EIP-3009 signing failed: {exc}")
+
+    def recover_eip3009_signer(
+        self,
+        authorization: Dict[str, Any],
+        signature: str
+    ) -> str:
+        """Cryptographically recover the signing address from an EIP-3009 signature."""
+        try:
+            from eth_account import Account
+            from eth_account.messages import encode_typed_data
+        except ImportError:
+            raise PaymentEngineError("Cannot recover EIP-3009 signer: 'eth_account' is missing.")
+
+        try:
+            full_msg = self.build_eip3009_message(authorization)
+            signable_msg = encode_typed_data(full_message=full_msg)
+            return Account.recover_message(signable_msg, signature=signature)
+        except Exception as exc:
+            raise PaymentEngineError(f"EIP-3009 signer recovery failed: {exc}")
+
+    def verify_eip3009_signature(
+        self,
+        authorization: Dict[str, Any],
+        signature: str,
+        expected_signer: str
+    ) -> bool:
+        """Verify that an EIP-3009 signature was produced by the expected signer."""
+        try:
+            recovered = self.recover_eip3009_signer(authorization, signature)
+            return recovered.lower() == expected_signer.lower()
+        except Exception:
+            return False
+
+    def build_eip712_message(self, authorization: Dict[str, Any]) -> Dict[str, Any]:
+        """Construct canonical EIP-712 typed structured data for Base Sepolia USDC payment authorization."""
+        network = authorization.get("network", NETWORK_BASE_SEPOLIA)
+        token = authorization.get("token", USDC_BASE_SEPOLIA)
+        pay_to = authorization.get("payTo", "")
+        amount = int(authorization.get("amount", 0))
+        nonce = str(authorization.get("nonce", ""))
+        valid_after = int(authorization.get("validAfter", 0))
+        valid_before = int(authorization.get("validBefore", 0))
+        idempotency_key = str(authorization.get("idempotencyKey", ""))
+
+        # Chain ID from network string (e.g. eip155:84532 -> 84532)
+        chain_id = 84532
+        if ":" in network:
+            try:
+                chain_id = int(network.split(":")[-1])
+            except (ValueError, TypeError):
+                chain_id = 84532
+
+        return {
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                ],
+                "PaymentAuthorization": [
+                    {"name": "network", "type": "string"},
+                    {"name": "token", "type": "address"},
+                    {"name": "payTo", "type": "address"},
+                    {"name": "amount", "type": "uint256"},
+                    {"name": "nonce", "type": "string"},
+                    {"name": "validAfter", "type": "uint256"},
+                    {"name": "validBefore", "type": "uint256"},
+                    {"name": "idempotencyKey", "type": "string"},
+                ],
+            },
+            "primaryType": "PaymentAuthorization",
+            "domain": {
+                "name": "USD Coin",
+                "version": "2",
+                "chainId": chain_id,
+                "verifyingContract": token,
+            },
+            "message": {
+                "network": network,
+                "token": token,
+                "payTo": pay_to,
+                "amount": amount,
+                "nonce": nonce,
+                "validAfter": valid_after,
+                "validBefore": valid_before,
+                "idempotencyKey": idempotency_key,
+            },
+        }
+
+    def sign_eip712_authorization(
+        self,
+        authorization: Dict[str, Any],
+        private_key: Optional[str] = None
+    ) -> str:
+        """Sign authorization using the EIP-712 structured typed data standard."""
+        self._validate_live_signing_credentials(authorization, private_key)
+        key = private_key or self.buyer_private_key
+        if not key:
+            raise PaymentEngineError("Cannot sign EIP-712 typed data: private key is not configured.")
+        if not key.startswith("0x"):
+            key = f"0x{key}"
+        if len(key) != 66:
+            raise PaymentEngineError("Invalid private key: must be a 66-character hex string (0x...).")
+
+        try:
+            from eth_account import Account
+            from eth_account.messages import encode_typed_data
+        except ImportError:
+            raise PaymentEngineError("Cannot sign EIP-712: 'eth_account' dependency is missing.")
+
+        try:
+            full_msg = self.build_eip712_message(authorization)
+            signable_msg = encode_typed_data(full_message=full_msg)
+            signed = Account.sign_message(signable_msg, private_key=key)
+            sig_hex = signed.signature.hex()
+            return sig_hex if sig_hex.startswith("0x") else f"0x{sig_hex}"
+        except Exception as exc:
+            raise PaymentEngineError(f"EIP-712 signing failed: {exc}")
+
+    def recover_eip712_signer(
+        self,
+        authorization: Dict[str, Any],
+        signature: str
+    ) -> str:
+        """Cryptographically recover the signing address from an EIP-712 signature."""
+        try:
+            from eth_account import Account
+            from eth_account.messages import encode_typed_data
+        except ImportError:
+            raise PaymentEngineError("Cannot recover EIP-712 signer: 'eth_account' is missing.")
+
+        try:
+            full_msg = self.build_eip712_message(authorization)
+            signable_msg = encode_typed_data(full_message=full_msg)
+            return Account.recover_message(signable_msg, signature=signature)
+        except Exception as exc:
+            raise PaymentEngineError(f"EIP-712 signer recovery failed: {exc}")
+
+    def verify_eip712_signature(
+        self,
+        authorization: Dict[str, Any],
+        signature: str,
+        expected_signer: str
+    ) -> bool:
+        """Verify that an EIP-712 signature was produced by the expected signer."""
+        try:
+            recovered = self.recover_eip712_signer(authorization, signature)
+            return recovered.lower() == expected_signer.lower()
+        except Exception:
+            return False
+
+    def _validate_live_signing_credentials(
+        self,
+        authorization: Dict[str, Any],
+        key: Optional[str] = None
+    ) -> None:
+        """Enforce strict fail-closed security for live payment signing.
+
+        Ensures placeholder addresses and missing credentials cannot be signed or paid in live mode.
+        """
+        if self.test_mode:
+            return
+
+        signing_key = key or self.buyer_private_key
+        if not signing_key:
+            raise PaymentEngineError(
+                "Live payment signing failed: BUYER_PRIVATE_KEY is not configured. "
+                "Live mode fails closed and strictly forbids mock signatures."
+            )
+        if not signing_key.startswith("0x"):
+            signing_key = f"0x{signing_key}"
+        if len(signing_key) != 66:
+            raise PaymentEngineError(
+                "Live payment signing failed: BUYER_PRIVATE_KEY must be a valid 66-character hex string (0x...). "
+                "Live mode fails closed."
+            )
+
+        buyer_addr = str(authorization.get("from") or "").lower()
+        if not buyer_addr or buyer_addr == "0x0000000000000000000000000000000000000000":
+            if key is not None:
+                try:
+                    from eth_account import Account
+                    buyer_addr = Account.from_key(signing_key).address.lower()
+                except Exception:
+                    pass
+            else:
+                buyer_addr = (self.buyer_address or "").lower()
+
+        if not buyer_addr or buyer_addr == "0x0000000000000000000000000000000000000000":
+            raise PaymentEngineError(
+                "Live payment signing failed: BUYER_WALLET_ADDRESS is configured as the non-operational placeholder (0x000...0). "
+                "Live payment execution requires an operator-supplied, funded Base Sepolia wallet address."
+            )
+
+        target_pay_to = str(authorization.get("payTo") or authorization.get("to") or "").lower()
+        if target_pay_to in (
+            "0x0000000000000000000000000000000000000000",
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002",
+            "0x0000000000000000000000000000000000000003",
+        ):
+            raise PaymentEngineError(
+                f"Live payment signing failed: Recipient payTo '{target_pay_to}' is a non-operational placeholder address. "
+                "Live payment execution strictly forbids placeholder recipients."
+            )
+
     def _sign_authorization(self, authorization: Dict[str, Any]) -> str:
         """Sign authorization with buyer private key if available.
 
         In live mode (test_mode=False), fails closed if credentials or eth_account are unavailable.
         Deterministic mock signing is strictly restricted to explicit test mode (test_mode=True).
         """
+        self._validate_live_signing_credentials(authorization)
+
+        if self.signature_scheme == "eip3009":
+            return self.sign_eip3009_authorization(authorization)
+
+        if self.signature_scheme == "eip712":
+            return self.sign_eip712_authorization(authorization)
+
         if not self.test_mode:
             # Live Mode: Strict fail-closed verification
             if not self.buyer_private_key:

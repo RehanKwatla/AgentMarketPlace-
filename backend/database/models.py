@@ -11,16 +11,22 @@ class LedgerRecordModel(Base):
 
     request_id = Column(String(64), primary_key=True, index=True)
     task_id = Column(String(64), index=True, nullable=True)
+    call_id = Column(String(64), index=True, nullable=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     buyer_id = Column(String(64), nullable=False, index=True)
     seller_id = Column(String(64), nullable=False, index=True)
     service_id = Column(String(64), nullable=False, index=True)
     listed_price = Column(String(32), nullable=False)
     amount_paid = Column(String(32), nullable=False)
+    amount_base_units = Column(Integer, nullable=True, default=0)
     tx_hash = Column(String(128), nullable=True, index=True)
+    settlement_proof = Column(Text, nullable=True)
+    network = Column(String(64), nullable=True)
+    token_address = Column(String(128), nullable=True)
     status = Column(String(32), nullable=False, index=True)
     latency_ms = Column(Float, nullable=False, default=0.0)
     error_reason = Column(Text, nullable=True)
+
 
 
 class ServiceRecordModel(Base):

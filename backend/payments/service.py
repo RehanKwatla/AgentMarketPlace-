@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import logging
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from jsonschema import Draft202012Validator, validate
 
@@ -23,6 +23,8 @@ from backend.payments.policy import PaymentPolicyVerifier
 from backend.payments.settlement import SettlementVerifier
 from backend.payments.x402_adapter import X402Adapter, x402_adapter
 from backend.payments.schemas import (
+    MultiHopRouteResult,
+    MultiHopStep,
     PaidCallRequest,
     PaidCallResult,
     PaymentStatus,
@@ -159,6 +161,7 @@ class PaymentService:
             receipt = await self.settlement_verifier.verify_settlement_proof(
                 proof_header=proof_or_tx,
                 expected_amount_units=amount_units,
+                expected_attempt_id=attempt_id,
             )
             if receipt and (receipt.tx_hash or receipt.facilitator_receipt_id):
                 resolved_status = PaymentStatus.PAID
@@ -444,6 +447,15 @@ class PaymentService:
             if budget_mgr:
                 await budget_mgr.release(res_id)
             self.idempotency_store.release_key(idempotency_key)
+            if self.repo:
+                try:
+                    self.repo.update_attempt_status(
+                        request_id,
+                        PaymentStatus.FAILED_AND_NOT_CHARGED,
+                        error_reason=f"Seller returned unexpected HTTP status {status_code}"
+                    )
+                except Exception:
+                    pass
             failed_result = PaidCallResult(
                 task_id=task_id,
                 call_id=call_id,
@@ -464,7 +476,8 @@ class PaymentService:
             if proof_header:
                 receipt = await self.settlement_verifier.verify_settlement_proof(
                     proof_header=proof_header,
-                    expected_amount_units=service.price_base_units
+                    expected_amount_units=service.price_base_units,
+                    expected_attempt_id=request_id,
                 )
         except (SettlementVerificationError, SettlementTimeoutError, Exception) as verify_err:
             logger.warning(f"Settlement verification issue for {request_id}: {verify_err}")
@@ -629,17 +642,255 @@ class PaymentService:
 
         record = LedgerRecordSchema(
             request_id=result.request_id,
+            task_id=result.task_id,
+            call_id=result.call_id,
             buyer_id="buyer_agent_primary",
             seller_id=f"seller_{service.category.value}",
             service_id=service.service_id,
             listed_price=service.price_usdc,
             amount_paid=result.amount_usdc if result.status in (PaymentStatus.PAID, PaymentStatus.PAID_OUTPUT_REJECTED) else "0.000000",
+            amount_base_units=result.amount_base_units if result.status in (PaymentStatus.PAID, PaymentStatus.PAID_OUTPUT_REJECTED) else 0,
             tx_hash=result.tx_hash,
+            settlement_proof=result.settlement_proof,
+            network=result.network,
+            token_address=result.token_address,
             status=ledger_status,
             latency_ms=round(latency, 2),
             error_reason=result.error_message,
         )
         ledger_repo.record_transaction(record)
+
+
+    async def execute_multi_hop_route(
+        self,
+        task_id: str,
+        route: List[MultiHopStep],
+        budget_manager: Optional[BudgetManager] = None,
+        max_hops: int = 10,
+        total_budget_units: Optional[int] = None,
+    ) -> MultiHopRouteResult:
+        """[IMPLEMENTED] Autonomous Multi-Hop Paid-Call Route Orchestration Engine.
+
+        Coordinates sequential or DAG-based multi-hop paid service calls with:
+        1. Route structural validation (empty routes, hop count limits, duplicate steps, dependency cycles).
+        2. Atomic task-level budget reservation and tracking across all hops.
+        3. Deterministic execution order respecting prerequisites.
+        4. Hop input data transformation / propagation from completed upstream outputs.
+        5. Atomic per-hop execution and idempotent retry safety (scoped key per hop).
+        6. Fail-closed intermediate error isolation (stops execution immediately on hop failure, preserving remaining budget).
+        7. Truthful ledger status reporting and reconciliation tracking.
+        """
+        route_start = time.perf_counter()
+
+        # Step 1: Validation
+        if not route:
+            return MultiHopRouteResult(
+                task_id=task_id,
+                status="refused",
+                error_message="Route contains no hops to execute.",
+                latency_ms=(time.perf_counter() - route_start) * 1000.0,
+            )
+
+        if len(route) > max_hops:
+            return MultiHopRouteResult(
+                task_id=task_id,
+                total_hops=len(route),
+                status="refused",
+                error_message=f"Route hop count ({len(route)}) exceeds maximum allowed limit of {max_hops}.",
+                latency_ms=(time.perf_counter() - route_start) * 1000.0,
+            )
+
+        step_ids = [step.step_id for step in route]
+        if len(step_ids) != len(set(step_ids)):
+            return MultiHopRouteResult(
+                task_id=task_id,
+                total_hops=len(route),
+                status="refused",
+                error_message="Duplicate step_id detected in multi-hop route.",
+                latency_ms=(time.perf_counter() - route_start) * 1000.0,
+            )
+
+        step_map = {step.step_id: step for step in route}
+
+        # Check for invalid dependencies and dependency cycles
+        for step in route:
+            for dep_id in step.depends_on:
+                if dep_id not in step_map:
+                    return MultiHopRouteResult(
+                        task_id=task_id,
+                        total_hops=len(route),
+                        status="refused",
+                        error_message=f"Step {step.step_id} references nonexistent prerequisite step {dep_id}.",
+                        latency_ms=(time.perf_counter() - route_start) * 1000.0,
+                    )
+
+        # Topological sort to verify DAG and determine execution order
+        in_degree = {step.step_id: 0 for step in route}
+        adjacency: Dict[int, List[int]] = {step.step_id: [] for step in route}
+        for step in route:
+            for dep in step.depends_on:
+                adjacency[dep].append(step.step_id)
+                in_degree[step.step_id] += 1
+
+        queue = [sid for sid, deg in in_degree.items() if deg == 0]
+        execution_order: List[int] = []
+        while queue:
+            curr = queue.pop(0)
+            execution_order.append(curr)
+            for nxt in adjacency[curr]:
+                in_degree[nxt] -= 1
+                if in_degree[nxt] == 0:
+                    queue.append(nxt)
+
+        if len(execution_order) != len(route):
+            return MultiHopRouteResult(
+                task_id=task_id,
+                total_hops=len(route),
+                status="refused",
+                error_message="Dependency cycle detected in multi-hop route.",
+                latency_ms=(time.perf_counter() - route_start) * 1000.0,
+            )
+
+        # Step 2: Validate service availability in catalog
+        for step in route:
+            srv = catalog.get_service(step.service_id)
+            if not srv:
+                return MultiHopRouteResult(
+                    task_id=task_id,
+                    total_hops=len(route),
+                    status="refused",
+                    error_step_id=step.step_id,
+                    error_message=f"Service '{step.service_id}' for step {step.step_id} not found in catalog.",
+                    latency_ms=(time.perf_counter() - route_start) * 1000.0,
+                )
+            if not srv.is_active:
+                return MultiHopRouteResult(
+                    task_id=task_id,
+                    total_hops=len(route),
+                    status="refused",
+                    error_step_id=step.step_id,
+                    error_message=f"Service '{step.service_id}' for step {step.step_id} is disabled.",
+                    latency_ms=(time.perf_counter() - route_start) * 1000.0,
+                )
+
+        # Step 3: Initialize task budget
+        if budget_manager:
+            budget_mgr = budget_manager
+        elif total_budget_units is not None:
+            budget_mgr = self.get_or_create_task_budget(task_id, total_budget_units)
+        else:
+            # Sum required prices from catalog as default budget allocation
+            estimated_total = sum(catalog.get_service(s.service_id).price_base_units for s in route)
+            budget_mgr = self.get_or_create_task_budget(task_id, estimated_total)
+
+        budget_allocated_usdc = base_units_to_usdc(budget_mgr.total_budget)
+
+        # Pre-check overall route affordability against initial budget
+        total_estimated_price = sum(catalog.get_service(s.service_id).price_base_units for s in route)
+        if total_estimated_price > budget_mgr.total_budget:
+            return MultiHopRouteResult(
+                task_id=task_id,
+                total_hops=len(route),
+                status="refused",
+                budget_allocated_usdc=budget_allocated_usdc,
+                error_message=f"Route estimated cost ({total_estimated_price} base units) exceeds allocated budget ({budget_mgr.total_budget} base units).",
+                latency_ms=(time.perf_counter() - route_start) * 1000.0,
+            )
+
+        # Step 4: Execute hops in topological order
+        executed_results: Dict[int, PaidCallResult] = {}
+        ordered_step_results: List[PaidCallResult] = []
+        route_status = "completed"
+        error_step_id: Optional[int] = None
+        error_message: Optional[str] = None
+        reconciliation_needed = False
+
+        for sid in execution_order:
+            step = step_map[sid]
+
+            # Validate all prerequisites succeeded
+            unmet_deps = [dep for dep in step.depends_on if dep not in executed_results or executed_results[dep].status != PaymentStatus.PAID]
+            if unmet_deps:
+                route_status = "partial_failure"
+                error_step_id = sid
+                error_message = f"Step {sid} aborted: prerequisite steps {unmet_deps} did not succeed."
+                break
+
+            # Resolve input payload with transforms from upstream outputs if specified
+            input_payload = dict(step.input_payload)
+            if step.input_transform:
+                for target_field, source_path in step.input_transform.items():
+                    parts = source_path.split(".", 1)
+                    if len(parts) == 2 and parts[0].startswith("step_"):
+                        try:
+                            source_step_id = int(parts[0].replace("step_", ""))
+                            source_field = parts[1]
+                            source_res = executed_results.get(source_step_id)
+                            if source_res and source_res.seller_output:
+                                val = source_res.seller_output.get(source_field)
+                                if val is not None:
+                                    input_payload[target_field] = val
+                        except Exception as e:
+                            logger.warning(f"Failed to transform input field '{target_field}' from '{source_path}': {e}")
+
+            # Scoped idempotency key per hop
+            hop_idempotency_key = f"idemp_{task_id}_hop_{sid}"
+            call_id = f"call_{task_id}_s{sid}"
+
+            result = await self.execute_paid_call(
+                task_id=task_id,
+                call_id=call_id,
+                service_id=step.service_id,
+                input_payload=input_payload,
+                idempotency_key=hop_idempotency_key,
+                task_budget_manager=budget_mgr,
+            )
+
+            executed_results[sid] = result
+            ordered_step_results.append(result)
+
+            if result.status == PaymentStatus.PENDING_RECONCILIATION:
+                route_status = "pending_reconciliation"
+                reconciliation_needed = True
+                error_step_id = sid
+                error_message = f"Step {sid} placed in suspense pending authoritative settlement reconciliation: {result.error_message}"
+                break
+            elif result.status != PaymentStatus.PAID:
+                # Any failure or refusal stops route execution
+                error_step_id = sid
+                error_message = f"Step {sid} failed with status '{result.status.value}': {result.error_message or result.error_code}"
+                if len(executed_results) > 1 and any(r.status == PaymentStatus.PAID for r in executed_results.values()):
+                    route_status = "partial_failure"
+                else:
+                    route_status = "failed" if result.status == PaymentStatus.FAILED_AND_NOT_CHARGED else "refused"
+                break
+
+        # Calculate totals
+        total_cost_units = sum(r.amount_base_units for r in ordered_step_results if r.status in (PaymentStatus.PAID, PaymentStatus.PAID_OUTPUT_REJECTED))
+        total_cost_usdc = base_units_to_usdc(total_cost_units)
+        remaining_units = max(0, budget_mgr.total_budget - total_cost_units)
+        remaining_budget_usdc = base_units_to_usdc(remaining_units)
+
+        successful_hops = sum(1 for r in ordered_step_results if r.status == PaymentStatus.PAID)
+        final_output = ordered_step_results[-1].seller_output if (ordered_step_results and route_status == "completed") else None
+
+        return MultiHopRouteResult(
+            task_id=task_id,
+            status=route_status,
+            total_hops=len(route),
+            executed_hops=len(ordered_step_results),
+            successful_hops=successful_hops,
+            total_cost_base_units=total_cost_units,
+            total_cost_usdc=total_cost_usdc,
+            budget_allocated_usdc=budget_allocated_usdc,
+            remaining_budget_usdc=remaining_budget_usdc,
+            steps=ordered_step_results,
+            final_output=final_output,
+            error_step_id=error_step_id,
+            error_message=error_message,
+            reconciliation_needed=reconciliation_needed,
+            latency_ms=(time.perf_counter() - route_start) * 1000.0,
+        )
 
 
 # Default singleton instance

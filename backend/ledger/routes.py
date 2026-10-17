@@ -65,3 +65,13 @@ async def get_all_reputations():
 )
 async def get_service_reputation(service_id: str):
     return reputation_calc.calculate_for_service(service_id)
+
+
+@router.post(
+    "/api/v1/ledger/sync",
+    summary="Synchronize historical settlement evidence into durable ledger"
+)
+async def sync_ledger():
+    """Trigger idempotent synchronization of historical payment attempts and settlement evidence into durable ledger."""
+    from backend.ledger.reconciliation import settlement_reconciler
+    return settlement_reconciler.sync_historical_settlements()
