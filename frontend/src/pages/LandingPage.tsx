@@ -111,6 +111,9 @@ export const LandingPage: React.FC = () => {
       <MaroonFintechLanding
         brand="Agentica."
         palette="maroon"
+        login={{ label: "Log in", href: "/login" }}
+        signup={{ label: "Create account", href: "/login" }}
+        primaryAction={{ label: "Enter the marketplace", href: "/login" }}
         about={{
           kicker: "The Machine Economy",
           statement:

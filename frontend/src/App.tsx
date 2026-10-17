@@ -16,6 +16,7 @@ import { Docs } from './pages/Docs';
 import { NotFound } from './pages/NotFound';
 
 import { LandingPage } from './pages/LandingPage';
+import { LoginPage, KycPage } from './pages/AuthFlow';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -23,6 +24,8 @@ export const AppRoutes: React.FC = () => {
       {/* 1. Standalone Landing Page Experience */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/landing" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/kyc" element={<KycPage />} />
 
       {/* 2. Main Application Workspace wrapped inside persistent Layout */}
       <Route element={<Layout />}>
