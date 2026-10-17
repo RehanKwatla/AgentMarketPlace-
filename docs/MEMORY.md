@@ -323,6 +323,8 @@
 - Test Suite Execution: **80 of 80 tests passed in 2.18s (100% pass rate)**.
 - `git diff --check` passed cleanly with 0 whitespace errors.
 
+---
+
 ### Step 17: Member 2 — Step 5A Independent Seller Testing (While M1 Implements x402)
 - Operating on branch `M2`.
 - Audited seller foundation across `backend/sellers/common.py`, `dependencies.py`, `routes.py`, `schemas.py`, `data_seller.py`, `scraping_seller.py`, and `inference_seller.py`.
@@ -358,4 +360,12 @@
   - Created `backend/tests/test_sellers_payment_integration.py` with 17 dedicated tests covering challenges, fail-closed boundaries, SSRF blocks, input bounds, verbatim proof attachment, context/idempotency forwarding, terms mismatches, and full buyer-seller-ledger handshake.
   - Ran full test suite via `python scripts/run_tests.py`: **81 of 81 tests passed (100% pass rate)**.
   - Verified zero modifications to payment-owned files (`backend/payments/`).
+
+---
+
+### Step 19: Member 2 — Phase 2 Provider Architecture & Advanced SSRF DNS Defense
+- Implemented modular provider architecture under `backend/sellers/providers/`:
+  - `inference/`: `ConfiguredProvider` and `fake.py` supporting Gemini and Groq LLMs with timeout bounding and fallback.
+  - `scraping/`: `fetcher.py`, `parser.py`, `safety.py`, and `transport.py` featuring DNS-rebinding protection and pre-execution safety validation.
+- Authored comprehensive test suite in `backend/tests/test_sellers_providers.py`.
 

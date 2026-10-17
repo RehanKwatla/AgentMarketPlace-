@@ -244,4 +244,5 @@ scripts/run_tests.py
         ├── test_ledger.py: Tests LedgerStatus enum values & reputation computation math
         └── test_integration.py: Executes end-to-end multi-step workflow harness
 ```
+
 All automated test suites verify every subsystem interface before developer feature branches are merged, executing with a 100% pass rate across all subsystems.
