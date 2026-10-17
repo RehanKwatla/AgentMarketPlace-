@@ -125,7 +125,9 @@ class BuyerService:
                 "amount_paid_usdc": call.amount_paid_usdc,
                 "latency_ms": call.latency_ms,
                 "tx_hash": call.transaction_hash,
-                "validation_status": call.validation_status
+                "validation_status": call.validation_status,
+                "source_metadata": call.source_metadata,
+                "timestamp": call.completed_at or call.created_at,
             })
 
         return TaskResultResponse(
@@ -312,10 +314,17 @@ class BuyerService:
 
         return task_record
 
-    async def submit_and_execute_task(self, request: TaskCreationRequest) -> TaskDetailResponse:
+    async def submit_and_execute_task(
+        self,
+        request: TaskCreationRequest,
+        background: bool = False
+    ) -> TaskDetailResponse:
         """Create task, persist it, and if execute_now is True, run the execution pipeline."""
         task_record = self.create_task(request)
         if request.execute_now:
+            if background or getattr(request, "background", False):
+                asyncio.create_task(self.execute_task(task_record.task_id))
+                return task_record
             return await self.execute_task(task_record.task_id)
         return task_record
 
@@ -647,19 +656,21 @@ class BuyerService:
                 error_msg = f"HTTP call failed: {str(e)}"
 
         latency = (time.perf_counter() - start_time) * 1000.0
+        completed_time = datetime.now(timezone.utc).isoformat()
+        schema_ver = getattr(service, "registry_version", "1.0.0")
+        source_meta = {
+            "endpoint_url": service.endpoint_url,
+            "network": service.network,
+            "seller_pay_to": service.pay_to,
+            "category": service.category.value,
+            "source_timestamp": completed_time,
+            "data_freshness_seconds": round(latency / 1000.0, 3),
+        }
 
         # 6. Settle Budget & Output Validation
         if paid:
             await budget_mgr.commit(res_id, service.price_atomic)
             amount_paid = service.price_usdc
-            completed_time = datetime.now(timezone.utc).isoformat()
-            schema_ver = getattr(service, "registry_version", "1.0.0")
-            source_meta = {
-                "endpoint_url": service.endpoint_url,
-                "network": service.network,
-                "seller_pay_to": service.pay_to,
-                "category": service.category.value
-            }
 
             # Validate output against registered Draft-7 output schema
             is_valid, val_err = self.output_validator.validate_output(
@@ -745,7 +756,9 @@ class BuyerService:
                 amount_paid_usdc="0.000000",
                 latency_ms=round(latency, 2),
                 error=f"Uncertain payment settlement: {error_msg}",
-                validation_status="pending_reconciliation"
+                validation_status="pending_reconciliation",
+                source_metadata=source_meta,
+                completed_at=completed_time
             )
             self.repository.record_call_to_ledger(
                 task_id=task_id,
@@ -816,7 +829,9 @@ class BuyerService:
                 amount_paid_usdc="0.000000",
                 latency_ms=round(latency, 2),
                 error=error_msg,
-                validation_status="not_applicable"
+                validation_status="not_applicable",
+                source_metadata=source_meta,
+                completed_at=completed_time
             )
             self.repository.record_call_to_ledger(
                 task_id=task_id,

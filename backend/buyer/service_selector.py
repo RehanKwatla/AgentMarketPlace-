@@ -22,8 +22,12 @@ class ServiceSelector:
         if exclude_service_ids:
             candidates = [c for c in candidates if c.service_id not in exclude_service_ids]
 
-        # Filter within budget
-        valid = [c for c in candidates if c.price_base_units <= max_budget_units]
+        # Filter within budget, excluding informational local reference profiles
+        valid = [
+            c for c in candidates
+            if (getattr(c, "price_base_units", None) or getattr(c, "price_atomic", 0)) <= max_budget_units
+            and not (c.capability_metadata and c.capability_metadata.constraints.get("local_reference") is True)
+        ]
         if not valid:
             return None
 

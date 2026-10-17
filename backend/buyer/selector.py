@@ -49,7 +49,9 @@ class ServiceSelector:
             return False, "Missing service identification metadata"
 
         constraints = service.capability_metadata.constraints if service.capability_metadata else {}
-        if constraints.get("local_reference") is True:
+        if constraints.get("local_reference") is True and not (
+            execution_constraints and execution_constraints.get("allow_local_reference") is True
+        ):
             return False, (
                 f"Service '{service.service_id}' is an informational local reference profile, "
                 "not an independently executable seller endpoint"

@@ -1,7 +1,9 @@
-"""[IMPLEMENTED] Payment Subsystem Routes (Member 1)."""
+import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 from backend.payments.service import payment_service
 from backend.payments.errors import PaymentEngineError

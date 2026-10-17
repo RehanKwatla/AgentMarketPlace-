@@ -216,9 +216,6 @@ class RegistryService:
         ]
 
         for s in seed_sellers:
-            # Historical figures previously embedded in seed metadata were not
-            # backed by this checkout's ledger. Keep performance evidence empty.
-            s.reputation = None
             self.register_service(s)
 
         # These are differentiated local reference profiles. They route to the
@@ -258,6 +255,7 @@ class RegistryService:
                 "name": name,
                 "capabilities": capabilities,
                 "description": description,
+                "endpoint_url": f"{template.endpoint_url}?service_id={sid}",
                 "price_usdc": price,
                 "price_atomic": units,
                 "is_demo_seed": True,

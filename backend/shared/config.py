@@ -63,6 +63,20 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = Field(default=None, alias="GROQ_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
 
+    # Phase 3: Auth, Session, and KYC Settings
+    auth_jwt_secret: str = Field(
+        default="agentica_phase3_jwt_secret_dev_key_secure_change_in_prod",
+        alias="AUTH_JWT_SECRET"
+    )
+    auth_jwt_algorithm: str = Field(default="HS256", alias="AUTH_JWT_ALGORITHM")
+    auth_access_token_expire_minutes: int = Field(default=60, alias="AUTH_ACCESS_TOKEN_EXPIRE_MINUTES")
+    kyc_webhook_secret: str = Field(
+        default="mock_kyc_webhook_hmac_secret_2026",
+        alias="KYC_WEBHOOK_SECRET"
+    )
+    kyc_mock_mode: bool = Field(default=True, alias="KYC_MOCK_MODE")
+
+
 
 @lru_cache()
 def get_settings() -> Settings:

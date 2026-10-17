@@ -21,8 +21,14 @@ from backend.shared.constants import (
     USDC_BASE_SEPOLIA,
     LedgerStatus,
 )
+from backend.database.session import init_db
 from backend.ledger.models import ledger_repo, LedgerRecordSchema
 from backend.payments.service import payment_service
+
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    init_db()
 
 
 @pytest.fixture

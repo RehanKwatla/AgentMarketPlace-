@@ -112,7 +112,7 @@ class TaskPlanner:
                 need_scraping = True
             if any(w in prompt_lower for w in ["crypto", "price", "market", "data", "eth", "btc", "financial", "volume"]):
                 need_data = True
-            if any(w in prompt_lower for w in ["summarize", "analyze", "ai", "reasoning", "infer", "report", "synthesis", "takeaway"]) or not (need_scraping or need_data):
+            if any(w in prompt_lower for w in ["summarize", "analyze", "ai", "reasoning", "infer", "report", "synthesis", "synthesize", "synthesizing", "takeaway"]) or not (need_scraping or need_data):
                 need_inference = True
 
         calls: List[PlannedCall] = []
@@ -173,8 +173,9 @@ class TaskPlanner:
                     f"Unable to select an eligible service for Data (budget: {budget_units} units). {reason}"
                 )
 
-            symbol = "ETH"
-            if "btc" in prompt_lower or "bitcoin" in prompt_lower:
+            if "eth" in prompt_lower or "ethereum" in prompt_lower:
+                symbol = "ETH"
+            elif "btc" in prompt_lower or "bitcoin" in prompt_lower:
                 symbol = "BTC"
             elif "sol" in prompt_lower or "solana" in prompt_lower:
                 symbol = "SOL"
@@ -182,8 +183,10 @@ class TaskPlanner:
                 symbol = "USDC"
             else:
                 sym_match = re.search(r"\b(?:symbol|ticker|asset|data for|rate of|rate for|price of|price for|quote for|market of)\s+([a-zA-Z0-9_]{2,30})\b", prompt_lower)
-                if sym_match:
+                if sym_match and sym_match.group(1).upper() not in ("PRICES", "RATES", "DATA", "INFO", "QUOTE", "ASSET"):
                     symbol = sym_match.group(1).upper()
+                else:
+                    symbol = "ETH"
 
             data_step_id = step_id
             data_payload = {"symbol": symbol}

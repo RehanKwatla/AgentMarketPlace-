@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MarketplaceProvider } from './context/MarketplaceContext';
+import { AuthProvider } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Marketplace } from './pages/Marketplace';
@@ -16,16 +17,28 @@ import { Docs } from './pages/Docs';
 import { NotFound } from './pages/NotFound';
 
 import { LandingPage } from './pages/LandingPage';
-import { LoginPage, KycPage } from './pages/AuthFlow';
+import { 
+  LoginPage, 
+  SignupPage, 
+  VerifyEmailPage, 
+  ForgotPasswordPage, 
+  ResetPasswordPage 
+} from './pages/AuthFlow';
+import { KycPage } from './pages/KycPage';
+import { WalletManagementPage } from './pages/WalletManagement';
+import { ProfilePage } from './pages/Profile';
 
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
-      {/* 1. Standalone Landing Page Experience */}
+      {/* 1. Standalone Authentication & Landing Experience */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/landing" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/kyc" element={<KycPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* 2. Main Application Workspace wrapped inside persistent Layout */}
       <Route element={<Layout />}>
@@ -49,6 +62,12 @@ export const AppRoutes: React.FC = () => {
         <Route path="analytics" element={<Analytics />} />
         <Route path="about" element={<About />} />
         <Route path="docs" element={<Docs />} />
+
+        {/* Phase 3 Authenticated Workspace Routes */}
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="wallets" element={<WalletManagementPage />} />
+        <Route path="kyc" element={<KycPage />} />
+
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
@@ -57,11 +76,13 @@ export const AppRoutes: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <MarketplaceProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </MarketplaceProvider>
+    <AuthProvider>
+      <MarketplaceProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </MarketplaceProvider>
+    </AuthProvider>
   );
 };
 

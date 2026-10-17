@@ -38,6 +38,31 @@ class LedgerStatus(str, Enum):
     FAILED_AND_NOT_CHARGED = "failed and not charged"
 
 
+class WalletRole(str, Enum):
+    """Roles assignable to linked EVM wallets."""
+    IDENTITY = "identity"
+    PAYMENT = "payment"
+    RECEIVING = "receiving"
+
+
+class WalletType(str, Enum):
+    """Supported EVM wallet providers."""
+    METAMASK = "metamask"
+    COINBASE = "coinbase"
+    OTHER = "other"
+
+
+class KycStatus(str, Enum):
+    """Provider-neutral KYC verification lifecycle statuses."""
+    NOT_STARTED = "NOT_STARTED"
+    PENDING = "PENDING"
+    VERIFIED = "VERIFIED"
+    REJECTED = "REJECTED"
+    REQUIRES_REVIEW = "REQUIRES_REVIEW"
+    EXPIRED = "EXPIRED"
+
+
+
 def usdc_to_base_units(amount_usdc: str | float | Decimal) -> int:
     """Convert decimal USDC string (e.g. '0.002') to integer base units (2000).
     Uses Decimal to avoid floating-point inaccuracies.

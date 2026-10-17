@@ -15,13 +15,13 @@ def test_registry_filters_text_query(client):
 
 def test_registry_filters_min_max_price(client):
     """Test min_price_usdc and max_price_usdc filters."""
-    # Data is 0.002, scraping is 0.003, inference is 0.004
+    # Services in range [0.0025, 0.0035]: scraping_002 (0.0025), scraping_001 (0.003), inference_003 (0.003)
     response = client.get("/api/v1/services?min_price_usdc=0.0025&max_price_usdc=0.0035")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     items = data.get("services") or data.get("items")
-    assert len(items) == 1
-    assert "scraping" in items[0]["service_id"]
+    assert len(items) == 3
+    assert {item["service_id"] for item in items} == {"scraping_001", "scraping_002", "inference_003"}
 
 
 def test_registry_reputation_endpoint(client):

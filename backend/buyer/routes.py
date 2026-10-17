@@ -1,11 +1,12 @@
-"""Buyer Subsystem FastAPI Router implementing canonical Task APIs."""
-from fastapi import APIRouter, status
+import asyncio
+from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse
 from backend.buyer.schemas import (
     TaskCallsResponse,
     TaskCreationRequest,
     TaskDetailResponse,
     TaskResultResponse,
+    TaskStatus,
 )
 from backend.buyer.service import buyer_service
 
@@ -19,10 +20,51 @@ router = APIRouter(tags=["Buyer Tasks"])
     summary="Submit and Create Autonomous Buyer Task",
     description="Validate natural language prompt and budget, persist task session, and orchestrate execution."
 )
-async def create_task(request: TaskCreationRequest):
+async def create_task(request: TaskCreationRequest, background: bool = Query(False, description="Run execution in background worker")):
     """Create task record in 'accepted' state, persist it, and execute planned workflow."""
-    task_response = await buyer_service.submit_and_execute_task(request)
-    return JSONResponse(status_code=status.HTTP_201_CREATED, content=task_response.model_dump())
+    is_bg = background or getattr(request, "background", False)
+    task_response = await buyer_service.submit_and_execute_task(request, background=is_bg)
+    resp_status = status.HTTP_202_ACCEPTED if is_bg else status.HTTP_201_CREATED
+    return JSONResponse(status_code=resp_status, content=task_response.model_dump())
+
+
+@router.post(
+    "/api/v1/tasks/{task_id}/execute",
+    response_model=TaskDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Execute an Accepted Buyer Task",
+    description="Trigger execution for a previously created task in 'accepted' state."
+)
+async def execute_task_endpoint(task_id: str, background: bool = Query(False, description="Run execution in background")):
+    task = buyer_service.get_task(task_id)
+    if not task:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": {
+                    "code": "NOT_FOUND",
+                    "message": f"Task with ID '{task_id}' was not found.",
+                    "details": {"task_id": task_id}
+                }
+            }
+        )
+    if task.status not in [TaskStatus.ACCEPTED.value, "created", "accepted"]:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "error": {
+                    "code": "INVALID_STATE",
+                    "message": f"Task '{task_id}' is in status '{task.status}' and cannot be executed.",
+                    "details": {"task_id": task_id, "current_status": task.status}
+                }
+            }
+        )
+    if background:
+        asyncio.create_task(buyer_service.execute_task(task_id))
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=task.model_dump())
+
+    executed_task = await buyer_service.execute_task(task_id)
+    return JSONResponse(status_code=status.HTTP_200_OK, content=executed_task.model_dump())
 
 
 # Legacy endpoint for backward compatibility with earlier tests

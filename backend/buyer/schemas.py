@@ -48,6 +48,7 @@ class TaskCreationRequest(BaseModel):
     preferred_categories: Optional[List[ServiceCategory]] = Field(default=None)
     required_categories: Optional[List[str]] = Field(default=None)
     execute_now: bool = Field(default=True, description="Whether to execute the task immediately after creation and persistence")
+    background: bool = Field(default=False, description="Whether to execute task in an asynchronous background worker")
 
     @model_validator(mode="before")
     @classmethod
@@ -231,3 +232,71 @@ class TaskCallsResponse(BaseModel):
         data = super().model_dump(*args, **kwargs)
         data["calls"] = data.get("items", [])
         return data
+
+
+# ==============================================================================
+# Standardized JSON Contracts (Phase 1)
+# ==============================================================================
+
+class SchemaValidationResult(BaseModel):
+    is_valid: bool
+    schema_version: str = "1.0.0"
+    error_message: Optional[str] = None
+    validation_engine: str = "Draft7Validator"
+    validated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class ProvenanceRecord(BaseModel):
+    call_id: str
+    service_id: str
+    category: str
+    step_id: Optional[int] = None
+    source_url: Optional[str] = None
+    source_timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    data_freshness_seconds: Optional[float] = None
+    signature: Optional[str] = None
+    settlement_evidence: Optional[str] = None
+
+
+class PaymentAttemptReference(BaseModel):
+    call_id: str
+    service_id: str
+    amount_atomic: int
+    amount_usdc: str
+    nonce: Optional[str] = None
+    transaction_hash: Optional[str] = None
+    status: str = "initiated"
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    details: Optional[Dict[str, Any]] = None
+    retryable: bool = False
+
+
+class AgentInvocationContract(BaseModel):
+    invocation_id: str
+    task_id: str
+    step_id: int
+    service_id: str
+    category: str
+    payload: Dict[str, Any]
+    budget_limit_atomic: int
+    depends_on: List[int] = Field(default_factory=list)
+    timeout_seconds: float = 10.0
+
+
+class AgentResultContract(BaseModel):
+    invocation_id: str
+    task_id: str
+    step_id: int
+    service_id: str
+    category: str
+    status: str
+    output: Optional[Dict[str, Any]] = None
+    error: Optional[ErrorDetail] = None
+    validation: Optional[SchemaValidationResult] = None
+    provenance: Optional[ProvenanceRecord] = None
+    payment_reference: Optional[PaymentAttemptReference] = None
+

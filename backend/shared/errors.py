@@ -65,3 +65,65 @@ class PaymentRequiredHTTPException(HTTPException):
             detail="Payment Required via x402 v2 protocol.",
             headers={"X-402-Requirement": requirement_json}
         )
+
+
+# --- Phase 3 Domain Exceptions ---
+
+class AuthenticationFailedError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "Invalid email or password."):
+        super().__init__(detail, error_code="AUTHENTICATION_FAILED")
+
+
+class TokenRevokedOrExpiredError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "Session token has been revoked or expired."):
+        super().__init__(detail, error_code="TOKEN_REVOKED_OR_EXPIRED")
+
+
+class WalletVerificationFailedError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "Cryptographic wallet signature verification failed."):
+        super().__init__(detail, error_code="WALLET_VERIFICATION_FAILED")
+
+
+class WalletAlreadyLinkedError(AgentEconomyBaseException):
+    def __init__(self, address: str):
+        super().__init__(
+            f"Wallet address '{address}' is already linked to another active account.",
+            error_code="WALLET_ALREADY_LINKED"
+        )
+
+
+class WalletNotFoundError(AgentEconomyBaseException):
+    def __init__(self, wallet_id: str):
+        super().__init__(
+            f"Linked wallet with ID '{wallet_id}' not found.",
+            error_code="WALLET_NOT_FOUND"
+        )
+
+
+class WalletRoleViolationError(AgentEconomyBaseException):
+    def __init__(self, detail: str):
+        super().__init__(detail, error_code="WALLET_ROLE_VIOLATION")
+
+
+class KycTransitionInvalidError(AgentEconomyBaseException):
+    def __init__(self, from_status: str, to_status: str):
+        super().__init__(
+            f"Invalid KYC status transition from '{from_status}' to '{to_status}'.",
+            error_code="KYC_INVALID_TRANSITION"
+        )
+
+
+class KycUnauthorizedUpdateError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "Direct client status updates are forbidden. Status must come from verified provider webhooks."):
+        super().__init__(detail, error_code="KYC_UNAUTHORIZED_UPDATE")
+
+
+class KycWebhookVerificationFailedError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "KYC provider webhook signature verification failed."):
+        super().__init__(detail, error_code="KYC_WEBHOOK_VERIFICATION_FAILED")
+
+
+class UnauthorizedAccessError(AgentEconomyBaseException):
+    def __init__(self, detail: str = "Access denied: insufficient permissions or verification level."):
+        super().__init__(detail, error_code="UNAUTHORIZED_ACCESS")
+

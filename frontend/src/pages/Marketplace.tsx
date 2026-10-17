@@ -223,22 +223,71 @@ export const Marketplace: React.FC = () => {
 
       <section className="rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] p-5 space-y-3" aria-label="Recommendation inspection">
         <div>
-          <h2 className="text-sm font-semibold text-[#241B19]">Recommendation inspection</h2>
-          <p className="text-xs text-[#82786F]">Ranking is computed by the registry API. A recommendation does not authorize payment.</p>
+          <h2 className="text-sm font-semibold text-[#241B19]">Recommendation Strategy & Ranking Engine</h2>
+          <p className="text-xs text-[#82786F]">Deterministic multi-attribute ranking backed by canonical ledger records. Hard filters gate eligibility before utility scoring.</p>
         </div>
+
+        {/* Scoring Weights Indicator */}
+        <div className="flex flex-wrap items-center gap-1.5 py-1 text-[11px] font-mono">
+          <span className="text-[#82786F] font-semibold mr-1">Scoring Weights:</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Capability: 25%</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Output Validity: 20%</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Reliability: 15%</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Success Rate: 15%</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Price: 10%</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Latency: 10%</span>
+          <span className="px-2 py-0.5 rounded bg-[#FFFFFF] border border-[#CFC7BB] text-[#241B19]">Freshness: 5%</span>
+        </div>
+
         <form onSubmit={runRecommendation} className="flex flex-wrap gap-2">
-          <input aria-label="Task for recommendation" value={recommendationTask} onChange={e => setRecommendationTask(e.target.value)} className="min-w-[240px] flex-1 rounded-md border border-[#CFC7BB] bg-white px-3 py-2 text-sm" />
-          <button disabled={isRecommending} className="rounded-md bg-[#7D292D] px-4 py-2 text-sm text-white disabled:opacity-60">{isRecommending ? 'Ranking…' : 'Rank candidates'}</button>
+          <input aria-label="Task for recommendation" value={recommendationTask} onChange={e => setRecommendationTask(e.target.value)} className="min-w-[240px] flex-1 rounded-md border border-[#CFC7BB] bg-white px-3 py-2 text-sm font-mono text-xs" />
+          <button disabled={isRecommending} className="rounded-md bg-[#7D292D] hover:bg-[#612024] px-4 py-2 text-xs font-mono font-semibold text-white disabled:opacity-60 transition-colors shadow-xs">{isRecommending ? 'Ranking…' : 'Rank candidates'}</button>
         </form>
         {recommendationError && <p role="alert" className="text-sm text-red-700">{recommendationError}</p>}
-        {recommendation && <div className="space-y-2 text-sm">
-          <p className="text-[#82786F]">{recommendation.explanation_summary}</p>
-          <div className="grid gap-2 md:grid-cols-3">{recommendation.recommendations.map((candidate: any) => <article key={candidate.service_id} className="rounded-lg border border-[#CFC7BB] bg-white p-3">
-            <div className="flex justify-between gap-2"><strong>{candidate.rank}. {candidate.name}</strong><span>{candidate.price_usdc} USDC</span></div>
-            <p className="mt-1 text-xs">Score {candidate.weighted_score.toFixed(3)} · {candidate.performance.evidence_status} · {candidate.performance.sample_size} ledger records</p>
-            <p className="mt-1 text-xs text-[#82786F]">Success: {candidate.performance.success_rate === null ? 'NEW' : `${(candidate.performance.success_rate * 100).toFixed(1)}%`} · Median observed latency: {candidate.performance.median_latency_ms === null ? 'NEW' : `${candidate.performance.median_latency_ms} ms`}</p>
-          </article>)}</div>
-          {recommendation.rejected_candidates.length > 0 && <details><summary className="cursor-pointer text-xs">Rejected alternatives ({recommendation.rejected_candidates.length})</summary><ul className="mt-1 list-disc pl-5 text-xs">{recommendation.rejected_candidates.map((candidate: any) => <li key={candidate.service_id}>{candidate.name}: {candidate.rejection_reasons.join('; ')}</li>)}</ul></details>}
+        {recommendation && <div className="space-y-3 text-sm">
+          <p className="text-xs text-[#82786F] font-mono">{recommendation.explanation_summary}</p>
+          <div className="grid gap-2.5 md:grid-cols-3">
+            {recommendation.recommendations.map((candidate: any) => {
+              const ev = candidate.performance.evidence_status;
+              return (
+                <article key={candidate.service_id} className="rounded-lg border border-[#CFC7BB] bg-white p-3 space-y-1.5 shadow-2xs">
+                  <div className="flex justify-between items-start gap-2">
+                    <strong className="text-xs font-sans text-[#241B19]">{candidate.rank}. {candidate.name}</strong>
+                    <span className="text-xs font-mono font-bold text-[#7D292D] shrink-0">{candidate.price_usdc} USDC</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <span className="font-semibold text-[#241B19]">Score: {candidate.weighted_score.toFixed(3)}</span>
+                    <span>•</span>
+                    <span className={`px-1.5 py-0.2 rounded font-semibold ${
+                      ev === 'VERIFIED' ? 'bg-[#E4EFE8] text-[#38865B]' :
+                      ev === 'INSUFFICIENT_DATA' ? 'bg-[#FEF3C7] text-[#92400E]' :
+                      'bg-[#E0F2FE] text-[#0369A1]'
+                    }`}>{ev}</span>
+                    <span>•</span>
+                    <span className="text-[#82786F]">{candidate.performance.sample_size} records</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-[#82786F] space-y-0.5 border-t border-[#CFC7BB]/40 pt-1">
+                    <div>Success: {candidate.performance.success_rate === null ? 'NEW' : `${(candidate.performance.success_rate * 100).toFixed(1)}%`} · Obs. Latency: {candidate.performance.median_latency_ms === null ? 'NEW' : `${candidate.performance.median_latency_ms} ms`}</div>
+                    <div className="text-[9px] text-[#241B19]/80">
+                      Cap: {(candidate.factor_scores.capability_match * 100).toFixed(0)}% | Valid: {(candidate.factor_scores.output_validity * 100).toFixed(0)}% | Rel: {(candidate.factor_scores.reliability * 100).toFixed(0)}% | Price: {(candidate.factor_scores.price_efficiency * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          {recommendation.rejected_candidates.length > 0 && (
+            <details className="text-xs font-mono rounded-lg border border-[#CFC7BB]/60 bg-white p-2.5">
+              <summary className="cursor-pointer font-semibold text-[#7D292D]">Rejected alternatives ({recommendation.rejected_candidates.length})</summary>
+              <ul className="mt-1.5 list-disc pl-5 space-y-1 text-[#82786F]">
+                {recommendation.rejected_candidates.map((candidate: any) => (
+                  <li key={candidate.service_id}>
+                    <strong className="text-[#241B19]">{candidate.name} ({candidate.service_id}):</strong> {candidate.rejection_reasons.join('; ')}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>}
       </section>
 

@@ -93,3 +93,27 @@ async def get_service_reputation(service_id: str):
             }
         )
     return JSONResponse(status_code=status.HTTP_200_OK, content=reputation.model_dump())
+
+
+@router.get(
+    "/{service_id}/metrics",
+    summary="Get Trustworthy Service Performance Metrics",
+    description="Retrieve ledger-backed performance metrics, sample size, observation window, and evidence status."
+)
+async def get_service_metrics(service_id: str):
+    service = registry_service.get_service(service_id)
+    if not service:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": {
+                    "code": "NOT_FOUND",
+                    "message": f"Service with ID '{service_id}' was not found in the registry.",
+                    "details": {"service_id": service_id}
+                }
+            }
+        )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=recommendation_engine.metrics(service)
+    )

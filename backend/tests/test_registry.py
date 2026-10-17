@@ -84,20 +84,19 @@ def test_registry_text_search(client):
 
 def test_registry_price_filtering(client):
     """Test min_price_usdc and max_price_usdc filtering."""
-    # Integer prices include the two data services at or below 0.0025 USDC.
+    # Services at or below 0.0025 USDC: data_002 (0.0015), data_001 (0.002), scraping_002 (0.0025)
     response = client.get("/api/v1/services?max_price_usdc=0.0025")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     items = data.get("services") or data.get("items")
-    assert {item["service_id"] for item in items} == {"data_001", "data_002"}
+    assert {item["service_id"] for item in items} == {"data_001", "data_002", "scraping_002"}
 
-    # Min price 0.0035 should include inference_001 (0.004)
+    # Min price 0.0035 includes services >= 0.0035 USDC: inference_001 (0.004), scraping_003 (0.004), data_003 (0.005), inference_002 (0.006)
     response_min = client.get("/api/v1/services?min_price_usdc=0.0035")
     assert response_min.status_code == status.HTTP_200_OK
     data_min = response_min.json()
     items_min = data_min.get("services") or data_min.get("items")
-    assert len(items_min) == 1
-    assert items_min[0]["service_id"] == "inference_001"
+    assert {item["service_id"] for item in items_min} == {"inference_001", "scraping_003", "data_003", "inference_002"}
 
 
 def test_registry_has_nine_unique_differentiated_profiles(client):

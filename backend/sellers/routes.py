@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Optional, Tuple
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -16,7 +16,9 @@ from backend.shared.constants import (
     HEADER_IDEMPOTENCY_KEY,
     NETWORK_BASE_SEPOLIA,
     USDC_BASE_SEPOLIA,
+    ServiceCategory,
 )
+from backend.registry.service import registry_service
 from backend.shared.schemas import PaymentPayload, PaymentRequirement, SettlementReceipt
 from backend.payments.interfaces import SellerPaymentVerifierInterface
 from backend.sellers.schemas import (
@@ -584,18 +586,31 @@ async def _verify_and_execute_seller(
 )
 async def handle_data_service(
     payload: DataSellerInput,
+    service_id: Optional[str] = Query(None, description="Registered service ID (e.g. data_001, data_002, data_003)"),
     payment_signature: Optional[str] = Header(None, alias=HEADER_PAYMENT_SIGNATURE),
     x_payment: Optional[str] = Header(None, alias=HEADER_X_PAYMENT),
     x_402_payment_payload: Optional[str] = Header(None, alias=HEADER_X402_PAYMENT_PAYLOAD),
+    x_service_id: Optional[str] = Header(None, alias="X-Service-Id"),
     context: SellerExecutionContext = Depends(get_seller_execution_context),
     service: DataSellerService = Depends(get_data_seller_service),
     verifier: Optional[SellerPaymentVerifierInterface] = Depends(get_payment_verifier),
     settings: Settings = Depends(get_settings),
 ):
+    target_id = service_id or x_service_id or "data_001"
+    reg_svc = registry_service.get_service(target_id)
+    if reg_svc and reg_svc.category == ServiceCategory.DATA:
+        svc_id = reg_svc.service_id
+        amount_units = reg_svc.price_atomic
+        pay_to = reg_svc.pay_to or settings.data_seller_pay_to
+    else:
+        svc_id = "data_001"
+        amount_units = 2000
+        pay_to = settings.data_seller_pay_to
+
     return await _verify_and_execute_seller(
-        service_id="data_001",
-        amount_units=2000,  # 0.002 USDC
-        pay_to=settings.data_seller_pay_to,
+        service_id=svc_id,
+        amount_units=amount_units,
+        pay_to=pay_to,
         payload=payload,
         payment_signature=payment_signature,
         x_payment=x_payment,
@@ -613,18 +628,31 @@ async def handle_data_service(
 )
 async def handle_scraping_service(
     payload: ScrapingSellerInput,
+    service_id: Optional[str] = Query(None, description="Registered service ID (e.g. scraping_001, scraping_002, scraping_003)"),
     payment_signature: Optional[str] = Header(None, alias=HEADER_PAYMENT_SIGNATURE),
     x_payment: Optional[str] = Header(None, alias=HEADER_X_PAYMENT),
     x_402_payment_payload: Optional[str] = Header(None, alias=HEADER_X402_PAYMENT_PAYLOAD),
+    x_service_id: Optional[str] = Header(None, alias="X-Service-Id"),
     context: SellerExecutionContext = Depends(get_seller_execution_context),
     service: ScrapingSellerService = Depends(get_scraping_seller_service),
     verifier: Optional[SellerPaymentVerifierInterface] = Depends(get_payment_verifier),
     settings: Settings = Depends(get_settings),
 ):
+    target_id = service_id or x_service_id or "scraping_001"
+    reg_svc = registry_service.get_service(target_id)
+    if reg_svc and reg_svc.category == ServiceCategory.SCRAPING:
+        svc_id = reg_svc.service_id
+        amount_units = reg_svc.price_atomic
+        pay_to = reg_svc.pay_to or settings.scraping_seller_pay_to
+    else:
+        svc_id = "scraping_001"
+        amount_units = 3000
+        pay_to = settings.scraping_seller_pay_to
+
     return await _verify_and_execute_seller(
-        service_id="scraping_001",
-        amount_units=3000,  # 0.003 USDC
-        pay_to=settings.scraping_seller_pay_to,
+        service_id=svc_id,
+        amount_units=amount_units,
+        pay_to=pay_to,
         payload=payload,
         payment_signature=payment_signature,
         x_payment=x_payment,
@@ -642,18 +670,31 @@ async def handle_scraping_service(
 )
 async def handle_inference_service(
     payload: InferenceSellerInput,
+    service_id: Optional[str] = Query(None, description="Registered service ID (e.g. inference_001, inference_002, inference_003)"),
     payment_signature: Optional[str] = Header(None, alias=HEADER_PAYMENT_SIGNATURE),
     x_payment: Optional[str] = Header(None, alias=HEADER_X_PAYMENT),
     x_402_payment_payload: Optional[str] = Header(None, alias=HEADER_X402_PAYMENT_PAYLOAD),
+    x_service_id: Optional[str] = Header(None, alias="X-Service-Id"),
     context: SellerExecutionContext = Depends(get_seller_execution_context),
     service: InferenceSellerService = Depends(get_inference_seller_service),
     verifier: Optional[SellerPaymentVerifierInterface] = Depends(get_payment_verifier),
     settings: Settings = Depends(get_settings),
 ):
+    target_id = service_id or x_service_id or "inference_001"
+    reg_svc = registry_service.get_service(target_id)
+    if reg_svc and reg_svc.category == ServiceCategory.INFERENCE:
+        svc_id = reg_svc.service_id
+        amount_units = reg_svc.price_atomic
+        pay_to = reg_svc.pay_to or settings.inference_seller_pay_to
+    else:
+        svc_id = "inference_001"
+        amount_units = 4000
+        pay_to = settings.inference_seller_pay_to
+
     return await _verify_and_execute_seller(
-        service_id="inference_001",
-        amount_units=4000,  # 0.004 USDC
-        pay_to=settings.inference_seller_pay_to,
+        service_id=svc_id,
+        amount_units=amount_units,
+        pay_to=pay_to,
         payload=payload,
         payment_signature=payment_signature,
         x_payment=x_payment,

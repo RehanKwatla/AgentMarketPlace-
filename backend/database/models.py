@@ -83,3 +83,110 @@ class TaskRecordModel(Base):
     total_cost_usdc = Column(String(32), default="0.000000")
     status = Column(String(32), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# --- Phase 3: Auth, Multi-Wallet, and KYC Models ---
+
+class UserModel(Base):
+    """User account entity with credentials and status."""
+    __tablename__ = "users"
+
+    id = Column(String(64), primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(32), default="user", nullable=False)  # "user", "admin", "seller"
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class EmailVerificationTokenModel(Base):
+    """Single-use email verification tokens."""
+    __tablename__ = "email_verification_tokens"
+
+    token = Column(String(128), primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class PasswordResetTokenModel(Base):
+    """Single-use password recovery tokens."""
+    __tablename__ = "password_reset_tokens"
+
+    token = Column(String(128), primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class RevokedTokenModel(Base):
+    """Token revocation blacklist (jti) for instant logout and session revocation."""
+    __tablename__ = "revoked_tokens"
+
+    jti = Column(String(128), primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    revoked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+
+class WalletChallengeModel(Base):
+    """Server-generated, short-lived, single-use signed challenges for EVM wallet verification."""
+    __tablename__ = "wallet_challenges"
+
+    nonce = Column(String(64), primary_key=True, index=True)
+    address = Column(String(64), index=True, nullable=False)
+    challenge_text = Column(Text, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class WalletLinkModel(Base):
+    """Linked EVM wallet addresses mapped to accounts with distinct roles."""
+    __tablename__ = "wallet_links"
+
+    id = Column(String(64), primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    address = Column(String(64), index=True, nullable=False)  # Normalized checksum address
+    role = Column(String(32), default="identity", nullable=False)  # "identity", "payment", "receiving"
+    wallet_type = Column(String(32), default="metamask", nullable=False)  # "metamask", "coinbase", "other"
+    is_primary = Column(Boolean, default=False, nullable=False)
+    network = Column(String(64), default=NETWORK_BASE_SEPOLIA, nullable=False)
+    chain_id = Column(Integer, default=84532, nullable=False)
+    verified_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class KycRecordModel(Base):
+    """Provider-neutral KYC verification record for account identity status."""
+    __tablename__ = "kyc_records"
+
+    user_id = Column(String(64), primary_key=True, index=True)
+    status = Column(String(32), default="NOT_STARTED", nullable=False)  # NOT_STARTED, PENDING, VERIFIED, REJECTED, REQUIRES_REVIEW, EXPIRED
+    provider = Column(String(64), default="mock_simulated", nullable=False)
+    provider_reference_id = Column(String(128), index=True, nullable=True)
+    is_simulated = Column(Boolean, default=True, nullable=False)
+    simulation_disclaimer = Column(Text, default="SIMULATED - NOT REAL-WORLD IDENTITY VERIFICATION", nullable=False)
+    rejection_reasons = Column(Text, nullable=True)
+    session_url = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    verified_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+
+
+class KycAuditModel(Base):
+    """Audit trail for all KYC state transitions and provider webhook events."""
+    __tablename__ = "kyc_audit_log"
+
+    id = Column(String(64), primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    from_status = Column(String(32), nullable=False)
+    to_status = Column(String(32), nullable=False)
+    provider = Column(String(64), nullable=False)
+    provider_reference_id = Column(String(128), nullable=True)
+    reason = Column(Text, nullable=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+

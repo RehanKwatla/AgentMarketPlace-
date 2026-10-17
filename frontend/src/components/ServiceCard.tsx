@@ -170,13 +170,13 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
             <span className="text-[#82786F]">No call history yet</span>
           )}
 
-          {hasTelemetry && effectiveRep?.reputation_score !== undefined ? (
-            <span className="text-[#38865B] font-semibold">
-              {effectiveRep.reputation_score}% score
-            </span>
-          ) : (
-            <span className="text-[10px] text-[#82786F]">Base Sepolia</span>
-          )}
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+            totalCalls >= 20 ? 'bg-[#E4EFE8] text-[#38865B] border border-[#A8B3A1]' :
+            totalCalls > 0 ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D]' :
+            'bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]'
+          }`}>
+            {totalCalls >= 20 ? 'VERIFIED' : totalCalls > 0 ? 'INSUFFICIENT_DATA' : 'NEW'}
+          </span>
         </div>
 
         {/* Action buttons */}

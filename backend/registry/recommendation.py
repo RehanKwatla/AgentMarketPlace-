@@ -5,8 +5,15 @@ from statistics import median
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
+from jsonschema import Draft7Validator
 
-from backend.shared.constants import ServiceCategory, base_units_to_usdc, usdc_to_base_units
+from backend.shared.constants import (
+    NETWORK_BASE_SEPOLIA,
+    USDC_BASE_SEPOLIA,
+    ServiceCategory,
+    base_units_to_usdc,
+    usdc_to_base_units,
+)
 from backend.registry.service import RegistryService, registry_service
 from backend.ledger.models import LedgerRepository, ledger_repo
 
@@ -71,6 +78,10 @@ class RecommendationEngine:
         reliability = max(0.0, 1.0 - (0.6 * timeouts + 0.4 * non_timeout_errors) / n) if n else None
         category = service.category.value
         return {
+            "service_id": service.service_id,
+            "category": category,
+            "price_atomic": service.price_atomic,
+            "price_usdc": service.price_usdc,
             "sample_size": n,
             "observation_window": "last_1000_ledger_records",
             "evidence_status": evidence.value,
@@ -103,16 +114,53 @@ class RecommendationEngine:
                 declared.update(svc.capability_metadata.tags or [])
             matched = [r for r in required if r in declared or any(r.lower() in c.lower() for c in declared)]
             reasons = []
+
+            # 1. Budget hard constraint
             if budget is not None and svc.price_atomic > budget:
                 reasons.append(f"Price {svc.price_atomic} base units exceeds budget {budget}")
+
+            # 2. Capability hard constraint
             if any(r not in matched for r in required):
                 reasons.append("Missing required capability: " + ", ".join(r for r in required if r not in matched))
+
+            # 3. Latency SLA constraint
             if request.max_acceptable_latency_ms and svc.capability_metadata and svc.capability_metadata.sla_latency_p95_ms and svc.capability_metadata.sla_latency_p95_ms > request.max_acceptable_latency_ms:
-                reasons.append("Declared latency SLA exceeds maximum")
+                reasons.append("Declared latency SLA exceeds maximum acceptable latency")
+
+            # 4. Freshness constraint
             if request.required_freshness:
                 reasons.append("Freshness requirement cannot be verified from available execution evidence")
+
+            # 5. Schema validity constraints (Draft-7)
+            if svc.input_schema and isinstance(svc.input_schema, dict):
+                try:
+                    Draft7Validator.check_schema(svc.input_schema)
+                except Exception as e:
+                    reasons.append(f"Invalid input JSON schema: {e}")
+            if svc.output_schema and isinstance(svc.output_schema, dict):
+                try:
+                    Draft7Validator.check_schema(svc.output_schema)
+                except Exception as e:
+                    reasons.append(f"Invalid output JSON schema: {e}")
+
+            # 6. Security and network policy constraints
+            if svc.network != NETWORK_BASE_SEPOLIA:
+                reasons.append(f"Network mismatch: {svc.network} != {NETWORK_BASE_SEPOLIA}")
+            token_addr = getattr(svc, "token", None) or getattr(svc, "asset_address", None)
+            if not token_addr or str(token_addr).lower() != USDC_BASE_SEPOLIA.lower():
+                reasons.append(f"Token mismatch: {token_addr} != {USDC_BASE_SEPOLIA}")
+            pay_to = getattr(svc, "pay_to", None) or getattr(svc, "pay_to_address", None)
+            if not pay_to or not str(pay_to).startswith("0x") or len(str(pay_to)) != 42:
+                reasons.append(f"Invalid pay_to address: {pay_to}")
+
             if reasons:
-                rejected.append({"service_id": svc.service_id, "name": svc.name, "eligible": False, "rejection_reasons": reasons, "price_atomic": svc.price_atomic})
+                rejected.append({
+                    "service_id": svc.service_id,
+                    "name": svc.name,
+                    "eligible": False,
+                    "rejection_reasons": reasons,
+                    "price_atomic": svc.price_atomic
+                })
                 continue
             candidate_data.append((svc, perf, matched))
 
@@ -153,7 +201,15 @@ class RecommendationEngine:
             "requirements": {"category": cat, "required_capabilities": required, "max_budget_atomic": budget,
                              "max_budget_usdc": base_units_to_usdc(budget) if budget is not None else None,
                              "max_acceptable_latency_ms": request.max_acceptable_latency_ms},
-            "candidates_discovered": len(services), "hard_filters_applied": ["registry active status", "category", "capabilities/tags", "integer base-unit budget", "declared latency SLA"],
+            "candidates_discovered": len(services), "hard_filters_applied": [
+                "registry active status",
+                "category",
+                "capabilities/tags",
+                "integer base-unit budget",
+                "declared latency SLA",
+                "schema Draft-7 compatibility",
+                "Base Sepolia USDC security policy"
+            ],
             "recommendations": ranked, "rejected_candidates": rejected,
             "top_recommendation": ranked[0] if ranked else None,
             "explanation_summary": f"Evaluated {len(services)} registry candidates; {len(ranked)} eligible and {len(rejected)} rejected. Performance fields derive from ledger records; empty history is NEW.",

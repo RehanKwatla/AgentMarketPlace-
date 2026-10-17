@@ -16,8 +16,13 @@ from backend.buyer.routes import router as buyer_router
 from backend.sellers.routes import router as sellers_router
 from backend.ledger.routes import router as ledger_router
 from backend.payments.routes import router as payments_router
+from backend.auth.routes import router as auth_router
+from backend.auth.policy_routes import router as policy_router
+from backend.wallets.routes import router as wallets_router
+from backend.kyc.routes import router as kyc_router
 
 settings = get_settings()
+
 
 
 @asynccontextmanager
@@ -139,6 +144,11 @@ app.include_router(buyer_router)
 app.include_router(sellers_router)
 app.include_router(ledger_router)
 app.include_router(payments_router)
+app.include_router(auth_router)
+app.include_router(policy_router)
+app.include_router(wallets_router)
+app.include_router(kyc_router)
+
 
 
 if __name__ == "__main__":

@@ -1,22 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   Copy, 
   Check, 
   ChevronDown, 
-  ExternalLink, 
   ShieldCheck, 
-  RotateCcw
+  RotateCcw,
+  User,
+  Wallet,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 
 import { useMarketplace } from '../../context/MarketplaceContext';
+import { useAuth } from '../../context/AuthContext';
 
 export const ProfileMenu: React.FC = () => {
-  const { healthInfo, paymentStatus, refreshData } = useMarketplace();
+  const { healthInfo, refreshData } = useMarketplace();
+  const { user, wallets, kycStatus, logout, isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
-  const address = '0x71C83eB5187A24B9E38Ea47e62a26c04f901139B';
+
+  // Active wallet: user's payment wallet, or first linked wallet, or default fallback
+  const activeWallet = wallets.find((w) => w.role === 'payment' && w.is_primary) || wallets[0];
+  const address = activeWallet?.address || '0x71C83eB5187A24B9E38Ea47e62a26c04f901139B';
   const shortAddress = `${address.slice(0, 6)}...${address.slice(-4)}`;
 
   const handleCopy = () => {
@@ -47,6 +57,18 @@ export const ProfileMenu: React.FC = () => {
 
   const isConnected = healthInfo?.status === 'healthy';
 
+  if (!isAuthenticated) {
+    return (
+      <Link
+        to="/login"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7D292D] text-[#F7F4EE] hover:bg-[#612024] transition-colors shadow-sm"
+      >
+        <LogIn size={13} />
+        <span>Sign In</span>
+      </Link>
+    );
+  }
+
   return (
     <div className="relative font-mono" ref={menuRef}>
       {/* Trigger Button */}
@@ -58,15 +80,15 @@ export const ProfileMenu: React.FC = () => {
       >
         {/* Generative Avatar */}
         <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-[#7D292D] to-[#612024] flex items-center justify-center text-[#F7F4EE] font-bold text-[11px] shadow-sm">
-          0x
+          {user?.email ? user.email.slice(0, 2).toUpperCase() : '0x'}
         </div>
 
         <div className="hidden sm:flex flex-col text-left">
           <span className="text-[11px] font-semibold text-[#241B19] leading-tight">
-            {shortAddress}
+            {user?.email ? user.email.split('@')[0] : shortAddress}
           </span>
           <span className="text-[9px] text-[#82786F] leading-none">
-            Buyer Account
+            {activeWallet ? `${activeWallet.role} wallet` : 'Buyer Account'}
           </span>
         </div>
 
@@ -79,7 +101,7 @@ export const ProfileMenu: React.FC = () => {
           {/* Account Details Header */}
           <div className="p-2.5 rounded-lg bg-[#DED8CD]/50 border border-[#CFC7BB] space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-[#82786F]">Connected Wallet</span>
+              <span className="text-[#82786F]">Connected EVM</span>
               <span className="flex items-center gap-1 text-[#38865B] font-bold">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#38865B] animate-pulse" />
                 Base Sepolia
@@ -98,11 +120,18 @@ export const ProfileMenu: React.FC = () => {
             </div>
           </div>
 
-          {/* Testnet Balance Details */}
+          {/* Testnet & Verification Details */}
           <div className="px-1 space-y-1">
             <div className="flex justify-between py-1 text-[11px] text-[#82786F]">
-              <span>Testnet Allowance:</span>
-              <span className="text-[#241B19] font-bold">100.00 USDC</span>
+              <span>KYC Status:</span>
+              <span className="font-bold text-[#241B19]">
+                {kycStatus?.status || 'NOT_STARTED'}
+                {kycStatus?.is_simulated && <span className="text-[#B37400] text-[9px] ml-1">[SIM]</span>}
+              </span>
+            </div>
+            <div className="flex justify-between py-1 text-[11px] text-[#82786F]">
+              <span>Linked Wallets:</span>
+              <span className="text-[#241B19] font-bold">{wallets.length}</span>
             </div>
             <div className="flex justify-between py-1 text-[11px] text-[#82786F]">
               <span>Backend Connectivity:</span>
@@ -110,15 +139,37 @@ export const ProfileMenu: React.FC = () => {
                 {isConnected ? 'Connected (:8000)' : 'Offline'}
               </span>
             </div>
-            <div className="flex justify-between py-1 text-[11px] text-[#82786F]">
-              <span>x402 Protocol:</span>
-              <span className="text-[#241B19]">
-                v{paymentStatus?.protocol_version || '2.0'}
-              </span>
-            </div>
           </div>
 
+          {/* Navigation Links */}
           <div className="border-t border-[#CFC7BB] pt-2 space-y-1">
+            <Link
+              to="/profile"
+              onClick={() => setIsOpen(false)}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#DED8CD]/60 text-[#241B19] flex items-center gap-2 transition-colors"
+            >
+              <User className="w-3.5 h-3.5 text-[#82786F]" />
+              <span>Account Profile</span>
+            </Link>
+
+            <Link
+              to="/wallets"
+              onClick={() => setIsOpen(false)}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#DED8CD]/60 text-[#241B19] flex items-center gap-2 transition-colors"
+            >
+              <Wallet className="w-3.5 h-3.5 text-[#82786F]" />
+              <span>Manage Wallets ({wallets.length})</span>
+            </Link>
+
+            <Link
+              to="/kyc"
+              onClick={() => setIsOpen(false)}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#DED8CD]/60 text-[#241B19] flex items-center gap-2 transition-colors"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-[#82786F]" />
+              <span>KYC Verification Console</span>
+            </Link>
+
             <button
               onClick={() => {
                 refreshData();
@@ -130,18 +181,17 @@ export const ProfileMenu: React.FC = () => {
               <span>Resync Network State</span>
             </button>
 
-            <a
-              href="https://sepolia.basescan.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#DED8CD]/60 text-[#82786F] hover:text-[#241B19] flex items-center justify-between transition-colors"
+            <button
+              onClick={async () => {
+                await logout();
+                setIsOpen(false);
+                navigate('/login');
+              }}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#B84040]/10 text-[#B84040] flex items-center gap-2 transition-colors cursor-pointer"
             >
-              <span className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#82786F]" />
-                <span>Base Sepolia Explorer</span>
-              </span>
-              <ExternalLink className="w-3 h-3 text-[#82786F]" />
-            </a>
+              <LogOut className="w-3.5 h-3.5 text-[#B84040]" />
+              <span>Sign Out</span>
+            </button>
           </div>
         </div>
       )}
