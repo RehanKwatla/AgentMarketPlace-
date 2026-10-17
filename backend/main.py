@@ -51,11 +51,21 @@ from backend.payments.middleware import X402ProtocolMiddleware
 raw_cors = getattr(settings, "cors_allowed_origins", "") or ""
 configured_origins = [o.strip() for o in raw_cors.split(",") if o.strip()]
 
+default_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "https://agentica-two.vercel.app",
+]
+
 if settings.environment.lower() == "production":
-    cors_origins = [o for o in configured_origins if o != "*"] if configured_origins else ["http://localhost:5173"]
+    cors_origins = [o for o in configured_origins if o != "*"] if configured_origins else ["https://agentica-two.vercel.app", "http://localhost:5173"]
+    if "https://agentica-two.vercel.app" not in cors_origins:
+        cors_origins.append("https://agentica-two.vercel.app")
 else:
     cors_origins = list(configured_origins)
-    for dev_origin in ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"]:
+    for dev_origin in default_origins:
         if dev_origin not in cors_origins:
             cors_origins.append(dev_origin)
 
