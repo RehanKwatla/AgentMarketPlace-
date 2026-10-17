@@ -48,6 +48,13 @@ class ServiceSelector:
         if not service.service_id or not service.name:
             return False, "Missing service identification metadata"
 
+        constraints = service.capability_metadata.constraints if service.capability_metadata else {}
+        if constraints.get("local_reference") is True:
+            return False, (
+                f"Service '{service.service_id}' is an informational local reference profile, "
+                "not an independently executable seller endpoint"
+            )
+
         if not service.endpoint_url or not (
             service.endpoint_url.startswith("http://") or service.endpoint_url.startswith("https://")
         ):

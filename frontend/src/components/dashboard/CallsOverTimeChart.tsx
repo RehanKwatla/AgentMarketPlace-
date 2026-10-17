@@ -41,13 +41,30 @@ export const CallsOverTimeChart: React.FC<CallsOverTimeChartProps> = ({ records 
   }
 
   // Aggregate records by bucket (e.g. index or timestamp)
-  const buckets = records.slice(0, 12).map((rec, idx) => ({
-    label: rec.timestamp ? new Date(rec.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `#${idx + 1}`,
-    latency: rec.latency_ms || 100,
-    service: rec.service_id,
-    requestId: rec.request_id,
-    status: rec.status,
-  }));
+  const buckets = records.slice(0, 12).map((rec, idx) => {
+    let timeLabel = `#${idx + 1}`;
+    let fullTime = '';
+    if (rec.timestamp) {
+      try {
+        const d = new Date(rec.timestamp);
+        if (!isNaN(d.getTime())) {
+          timeLabel = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          fullTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+      } catch {
+        timeLabel = `#${idx + 1}`;
+      }
+    }
+
+    return {
+      label: timeLabel,
+      fullTime,
+      latency: rec.latency_ms || 100,
+      service: rec.service_id,
+      requestId: rec.request_id,
+      status: rec.status,
+    };
+  });
 
   const maxLatency = Math.max(...buckets.map(b => b.latency), 500);
 
@@ -63,65 +80,106 @@ export const CallsOverTimeChart: React.FC<CallsOverTimeChartProps> = ({ records 
         </span>
       </div>
 
-      {/* SVG Responsive Bar Visualization */}
-      <div className="relative my-auto pt-4 pb-2">
-        <svg className="w-full h-36 overflow-visible" viewBox={`0 0 ${buckets.length * 50 + 20} 120`} preserveAspectRatio="none">
-          <line x1="0" y1="110" x2={buckets.length * 50 + 20} y2="110" stroke="#CFC7BB" strokeWidth="1" />
-          <line x1="0" y1="55" x2={buckets.length * 50 + 20} y2="55" stroke="#CFC7BB" strokeDasharray="3 3" opacity="0.6" />
-          
+      {/* Responsive Bar Visualization */}
+      <div className="relative my-auto flex-1 flex flex-col justify-end pt-3 pb-1">
+        {/* Horizontal reference grid lines */}
+        <div className="absolute inset-x-0 top-4 bottom-10 pointer-events-none flex flex-col justify-between">
+          <div className="border-b border-[#CFC7BB]/50 border-dashed w-full relative">
+            <span className="absolute -top-3 right-0 text-[9px] font-mono text-[#82786F]/80">
+              {maxLatency} ms
+            </span>
+          </div>
+          <div className="border-b border-[#CFC7BB]/30 border-dashed w-full relative">
+            <span className="absolute -top-3 right-0 text-[9px] font-mono text-[#82786F]/60">
+              {Math.round(maxLatency / 2)} ms
+            </span>
+          </div>
+          <div className="border-b border-[#CFC7BB] w-full" />
+        </div>
+
+        {/* Bars Container */}
+        <div className="relative z-10 flex items-end justify-around gap-2 px-2 h-32">
           {buckets.map((b, idx) => {
-            const barHeight = Math.max(12, (b.latency / maxLatency) * 90);
-            const x = idx * 50 + 15;
-            const y = 110 - barHeight;
+            const heightPercent = Math.max(10, Math.min(100, (b.latency / maxLatency) * 100));
             const isHovered = hoveredIdx === idx;
+            const isPaid = b.status === 'paid';
+            const isRejected = b.status === 'paid output rejected';
 
             return (
-              <g 
-                key={idx} 
-                className="cursor-pointer transition-all"
+              <div
+                key={idx}
+                className="flex-1 max-w-[64px] min-w-[32px] h-full flex flex-col justify-end items-center group relative cursor-pointer"
                 onMouseEnter={() => setHoveredIdx(idx)}
                 onMouseLeave={() => setHoveredIdx(null)}
               >
-                <rect
-                  x={x}
-                  y={y}
-                  width="24"
-                  height={barHeight}
-                  rx="3"
-                  className={`${
-                    isHovered 
-                      ? 'fill-[#7D292D]' 
-                      : b.status === 'paid' 
-                      ? 'fill-[#A8B3A1] hover:fill-[#7D292D]' 
-                      : 'fill-[#DED8CD] hover:fill-[#A86E24]'
-                  } transition-colors`}
-                />
-                <text
-                  x={x + 12}
-                  y="122"
-                  textAnchor="middle"
-                  className="fill-[#82786F] text-[9px] font-mono"
+                {/* Floating Tooltip */}
+                {isHovered && (
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-[#241B19] text-[#F7F4EE] px-3 py-2 rounded-lg shadow-xl text-[10px] font-mono z-30 whitespace-nowrap pointer-events-none border border-[#3E302C] min-w-[130px]">
+                    <div className="font-bold text-[#E5D4C0]">{b.service}</div>
+                    <div className="text-[11px] font-semibold text-[#A8B3A1] mt-0.5">
+                      {b.latency} ms • <span className="capitalize">{b.status}</span>
+                    </div>
+                    {b.fullTime && (
+                      <div className="text-[9px] text-[#CFC7BB]/70 mt-0.5">{b.fullTime}</div>
+                    )}
+                    <div className="text-[8px] text-[#CFC7BB]/50 truncate max-w-[140px] mt-0.5">
+                      {b.requestId}
+                    </div>
+                  </div>
+                )}
+
+                {/* Micro Latency readout on hover */}
+                <span
+                  className={`text-[9px] font-mono transition-opacity duration-150 mb-1 ${
+                    isHovered ? 'text-[#7D292D] font-bold opacity-100' : 'text-[#82786F] opacity-0 group-hover:opacity-100'
+                  }`}
                 >
-                  {b.label}
-                </text>
-              </g>
+                  {b.latency}ms
+                </span>
+
+                {/* Bar Track & Fill */}
+                <div className="w-full flex justify-center items-end h-20">
+                  <div
+                    style={{ height: `${heightPercent}%` }}
+                    className={`w-full max-w-[28px] rounded-t-sm transition-all duration-200 shadow-sm ${
+                      isHovered
+                        ? 'bg-[#7D292D] scale-x-105'
+                        : isPaid
+                        ? 'bg-[#A8B3A1] hover:bg-[#7D292D]'
+                        : isRejected
+                        ? 'bg-[#A86E24] hover:bg-[#7D292D]'
+                        : 'bg-[#DED8CD] hover:bg-[#7D292D]'
+                    }`}
+                  />
+                </div>
+
+                {/* X-Axis Time / Service Label */}
+                <div className="mt-1.5 text-center w-full">
+                  <span className="block text-[10px] font-mono text-[#82786F] truncate max-w-full">
+                    {b.label}
+                  </span>
+                  <span className="block text-[8px] font-mono text-[#82786F]/70 truncate max-w-full">
+                    {b.service.replace(/^(data_|scraping_|inference_)/, '')}
+                  </span>
+                </div>
+              </div>
             );
           })}
-        </svg>
-
-        {/* Floating Tooltip */}
-        {hoveredIdx !== null && buckets[hoveredIdx] && (
-          <div className="absolute top-0 right-4 bg-[#FFFFFF] border border-[#CFC7BB] p-2.5 rounded-lg shadow-lg text-[10px] font-mono z-20 space-y-0.5">
-            <span className="text-[#241B19] font-bold block">{buckets[hoveredIdx].service}</span>
-            <span className="text-[#7D292D] font-semibold">Latency: {buckets[hoveredIdx].latency} ms</span>
-            <span className="text-[#82786F] block truncate max-w-[140px]">{buckets[hoveredIdx].requestId}</span>
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="text-[10px] font-mono text-[#82786F] border-t border-[#CFC7BB]/60 pt-2 flex justify-between items-center">
         <span>Scale: 0 – {maxLatency} ms</span>
-        <span className="text-[#38865B] font-medium">Sage: Settled (Paid)</span>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 text-[#38865B] font-medium">
+            <span className="w-2 h-2 rounded-full bg-[#A8B3A1]" />
+            Settled (Paid)
+          </span>
+          <span className="flex items-center gap-1.5 text-[#A86E24] font-medium">
+            <span className="w-2 h-2 rounded-full bg-[#A86E24]" />
+            Rejected
+          </span>
+        </div>
       </div>
     </div>
   );

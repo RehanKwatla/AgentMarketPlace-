@@ -40,6 +40,7 @@ class CallStatus(str, Enum):
 
 class TaskCreationRequest(BaseModel):
     task: Optional[str] = Field(default=None, description="Natural language task prompt")
+    prompt: Optional[str] = Field(default=None, description="Alias for task prompt")
     description: Optional[str] = Field(default=None, description="Alias for task prompt")
     budget_usdc: Optional[str] = Field(default=None, description="Spending budget in decimal USDC (e.g. '0.050000')")
     max_budget_atomic: Optional[int] = Field(default=None, description="Spending budget in atomic base units (6 decimals)")
@@ -52,11 +53,12 @@ class TaskCreationRequest(BaseModel):
     @classmethod
     def normalize_and_validate_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            # 1. Resolve task / description
-            if not data.get("task") and data.get("description"):
-                data["task"] = data["description"]
-            elif not data.get("description") and data.get("task"):
-                data["description"] = data["task"]
+            # 1. Resolve task / prompt / description
+            resolved_text = data.get("task") or data.get("prompt") or data.get("description")
+            if resolved_text:
+                data["task"] = resolved_text
+                data["description"] = resolved_text
+                data["prompt"] = resolved_text
 
             prompt = data.get("task")
             if not prompt or not isinstance(prompt, str) or len(prompt.strip()) < 3:

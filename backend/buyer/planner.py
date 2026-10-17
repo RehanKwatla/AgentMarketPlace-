@@ -99,7 +99,7 @@ class TaskPlanner:
 
         need_scraping = False
         need_data = False
-        need_inference = True
+        need_inference = False
 
         # Check explicit preferred categories
         if request.preferred_categories:

@@ -24,13 +24,13 @@ def _resolve_default_inference_provider() -> InferenceProviderType:
     env_val = os.getenv("INFERENCE_PROVIDER")
     if env_val:
         return InferenceProviderType(env_val.lower())
-    if os.getenv("GEMINI_API_KEY"):
-        return InferenceProviderType.GEMINI
     if os.getenv("GROQ_API_KEY"):
         return InferenceProviderType.GROQ
+    if os.getenv("GEMINI_API_KEY"):
+        return InferenceProviderType.GEMINI
     if os.getenv("OPENAI_API_KEY"):
         return InferenceProviderType.OPENAI
-    return InferenceProviderType.GEMINI
+    return InferenceProviderType.GROQ
 
 
 class ProviderSettings(BaseModel):
@@ -43,7 +43,7 @@ class ProviderSettings(BaseModel):
             if "inference_provider" not in data:
                 if data.get("openai_api_key") and not data.get("gemini_api_key") and not data.get("groq_api_key"):
                     data["inference_provider"] = InferenceProviderType.OPENAI
-                elif data.get("groq_api_key") and not data.get("gemini_api_key"):
+                elif data.get("groq_api_key"):
                     data["inference_provider"] = InferenceProviderType.GROQ
                 elif data.get("gemini_api_key"):
                     data["inference_provider"] = InferenceProviderType.GEMINI
@@ -51,6 +51,16 @@ class ProviderSettings(BaseModel):
 
     mode: ProviderMode = Field(
         default_factory=lambda: ProviderMode(os.getenv("SELLER_PROVIDER_MODE", "fake").lower())
+    )
+
+    # Data can be demo-backed independently while inference remains live.
+    # Unset preserves the legacy shared SELLER_PROVIDER_MODE behavior.
+    data_provider_mode: Optional[ProviderMode] = Field(
+        default_factory=lambda: (
+            ProviderMode(os.getenv("DATA_PROVIDER_MODE", "").lower())
+            if os.getenv("DATA_PROVIDER_MODE")
+            else None
+        )
     )
     
     # Inference Provider Selection

@@ -1,5 +1,6 @@
 """Buyer Orchestration Service managing task lifecycle, concurrency, Member 1 payments, and Member 4 persistence."""
 import asyncio
+import dataclasses
 import json
 import time
 import uuid
@@ -776,11 +777,21 @@ class BuyerService:
 
                     # Execute fallback
                     fallbacks.append(f"Service {service.service_id} failed ({error_msg}); running fallback {fb_id}")
-                    fb_plan = planned.model_copy(update={
-                        "service_id": fb_id,
-                        "allow_fallback": False,
-                        "fallback_service_ids": []
-                    })
+                    if hasattr(planned, "model_copy"):
+                        fb_plan = planned.model_copy(update={
+                            "service_id": fb_id,
+                            "allow_fallback": False,
+                            "fallback_service_ids": []
+                        })
+                    elif dataclasses.is_dataclass(planned):
+                        fb_plan = dataclasses.replace(
+                            planned,
+                            service_id=fb_id,
+                            allow_fallback=False,
+                            fallback_service_ids=[]
+                        )
+                    else:
+                        fb_plan = planned
                     fb_record = await self._execute_call(
                         task_id=task_id,
                         planned=fb_plan,

@@ -79,9 +79,29 @@ app.add_middleware(X402ProtocolMiddleware)
 
 @app.exception_handler(AgentEconomyBaseException)
 async def agent_economy_exception_handler(request: Request, exc: AgentEconomyBaseException):
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and (origin in cors_origins or "*" in cors_origins):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error_code": exc.error_code, "detail": exc.message}
+        content={"error_code": exc.error_code, "detail": exc.message},
+        headers=headers
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and (origin in cors_origins or "*" in cors_origins):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"error_code": "INTERNAL_SERVER_ERROR", "detail": str(exc)},
+        headers=headers
     )
 
 

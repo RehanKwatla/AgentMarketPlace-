@@ -29,7 +29,7 @@ class ConfiguredDataProvider(DataProviderInterface):
 
     async def get_data(self, ticker: str) -> Dict[str, Any]:
         """Fetch market data via fake generator or live HTTP endpoint."""
-        if self.settings.mode == ProviderMode.FAKE:
+        if (self.settings.data_provider_mode or self.settings.mode) == ProviderMode.FAKE:
             return await self._fake_provider.get_data(ticker)
 
         if not self.settings.data_provider_url:

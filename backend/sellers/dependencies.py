@@ -47,7 +47,7 @@ def get_data_provider(
     Selects ConfiguredDataProvider in LIVE mode, FakeDataProvider in FAKE mode.
     Can be overridden via app.dependency_overrides[get_data_provider].
     """
-    if settings.mode == ProviderMode.LIVE:
+    if (settings.data_provider_mode or settings.mode) == ProviderMode.LIVE:
         return ConfiguredDataProvider(settings=settings)
     return FakeDataProvider()
 
