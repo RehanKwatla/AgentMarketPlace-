@@ -98,7 +98,7 @@ export const CallsOverTimeChart: React.FC<CallsOverTimeChartProps> = ({ records 
         </div>
 
         {/* Bars Container */}
-        <div className="relative z-10 flex items-end justify-around gap-2 px-2 h-32">
+        <div className="relative z-10 flex items-end justify-around gap-1 sm:gap-2 px-1 sm:px-2 h-32">
           {buckets.map((b, idx) => {
             const heightPercent = Math.max(10, Math.min(100, (b.latency / maxLatency) * 100));
             const isHovered = hoveredIdx === idx;
@@ -108,7 +108,7 @@ export const CallsOverTimeChart: React.FC<CallsOverTimeChartProps> = ({ records 
             return (
               <div
                 key={idx}
-                className="flex-1 max-w-[64px] min-w-[32px] h-full flex flex-col justify-end items-center group relative cursor-pointer"
+                className="flex-1 min-w-0 max-w-[64px] h-full flex flex-col justify-end items-center group relative cursor-pointer"
                 onMouseEnter={() => setHoveredIdx(idx)}
                 onMouseLeave={() => setHoveredIdx(null)}
               >

@@ -7,6 +7,7 @@ import { ServiceDetailModal } from './ServiceDetailModal';
 import { LedgerDetailModal } from './LedgerDetailModal';
 import { TaskPlanPreviewModal } from './TaskPlanPreviewModal';
 import { useMarketplace } from '../context/MarketplaceContext';
+import { getApiEndpointLabel } from '../api/client';
 import { useDocumentMetadata } from '../utils/useDocumentMetadata';
 
 export const Layout: React.FC = () => {
@@ -61,7 +62,7 @@ export const Layout: React.FC = () => {
       <main className="relative z-10 flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-6">
         {fetchError && (
           <div className="mb-6 p-3.5 rounded-xl bg-[#FDE8E8] border border-[#F8B4B4] text-[#7D292D] text-xs font-mono flex items-center justify-between shadow-sm">
-            <span>Backend Notice: {fetchError}. Check FastAPI server at http://localhost:8000</span>
+            <span>Backend Notice: {fetchError}. Check FastAPI server at {getApiEndpointLabel()}</span>
             <button
               onClick={() => refreshData()}
               className="px-2.5 py-1 bg-[#7D292D] hover:bg-[#612024] text-[#F7F4EE] font-bold rounded-lg text-[11px] cursor-pointer transition-colors shadow-sm"

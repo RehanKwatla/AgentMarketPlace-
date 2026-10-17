@@ -90,7 +90,7 @@ export const Header: React.FC = () => {
         </NavLink>
 
         {/* 2. Middle: Navigation Items across the top */}
-        <nav aria-label="Primary Navigation" className="hidden xl:flex items-center gap-1 text-xs">
+        <nav aria-label="Primary Navigation" className="hidden 2xl:flex items-center gap-1 text-xs">
           {navLinks.map((item) => {
             const isActive = location.pathname.startsWith(item.to);
             const Icon = item.icon;
@@ -150,7 +150,7 @@ export const Header: React.FC = () => {
             aria-expanded={mobileMenuOpen}
             aria-controls="mobile-navigation-menu"
             aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            className="p-1.5 rounded-lg text-[#82786F] hover:text-[#241B19] hover:bg-[#DED8CD] transition-colors xl:hidden border border-[#CFC7BB] focus-visible:ring-2 focus-visible:ring-[#7D292D] outline-none cursor-pointer"
+            className="p-1.5 rounded-lg text-[#82786F] hover:text-[#241B19] hover:bg-[#DED8CD] transition-colors 2xl:hidden border border-[#CFC7BB] focus-visible:ring-2 focus-visible:ring-[#7D292D] outline-none cursor-pointer"
           >
             {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
@@ -163,7 +163,7 @@ export const Header: React.FC = () => {
           id="mobile-navigation-menu"
           role="navigation"
           aria-label="Mobile Navigation"
-          className="xl:hidden absolute top-14 left-0 right-0 bg-[#F7F4EE] border-b border-[#CFC7BB] p-4 space-y-3 text-xs shadow-xl z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+          className="2xl:hidden absolute top-14 left-0 right-0 bg-[#F7F4EE] border-b border-[#CFC7BB] p-4 space-y-3 text-xs shadow-xl z-50 animate-in fade-in slide-in-from-top-2 duration-150"
         >
           <form onSubmit={handleSearchSubmit} className="relative mb-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#82786F]" />

@@ -14,6 +14,7 @@ import {
 import { LedgerRecord } from '../types';
 import { mapPaymentStatus } from '../utils/statusMapping';
 import { StatusBadge } from './ui/StatusBadge';
+import { CurrencyConversion } from './ui/CurrencyConversion';
 
 export interface PaymentDisplayRecord {
   request_id: string;
@@ -261,6 +262,16 @@ export const X402PaymentModal: React.FC<X402PaymentModalProps> = ({ record, onCl
                   </span>
                 </div>
               </div>
+
+              {/* Compact fiat display conversion (estimate, never an on-chain swap) */}
+              <CurrencyConversion
+                amountUsdc={
+                  record.status === 'paid' || record.status === 'paid output rejected'
+                    ? (record.amount_paid || '0')
+                    : (record.amount_paid || record.listed_price || '0')
+                }
+                network={network}
+              />
 
               {/* Identification & Provenance Card */}
               <div className="p-4 rounded-xl bg-[#FFFFFF] border border-[#CFC7BB] space-y-2.5 font-mono text-xs shadow-xs">

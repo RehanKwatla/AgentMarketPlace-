@@ -47,6 +47,17 @@ export function getApiBaseUrl(): string {
 
 const API_BASE_URL = getApiBaseUrl();
 const apiUrl = (path: string): string => `${API_BASE_URL}${path}`;
+
+/**
+ * Human-readable label for the resolved API origin, safe to render in the UI.
+ * Returns the configured base URL, or the current origin when calls are proxied
+ * same-origin. Never hardcodes localhost in a production build.
+ */
+export function getApiEndpointLabel(): string {
+  if (API_BASE_URL) return API_BASE_URL;
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+  return 'the configured API endpoint';
+}
 const apiUrlForQuery = (path: string): URL => new URL(
   apiUrl(path),
   typeof window === 'undefined' ? 'http://localhost' : window.location.origin,

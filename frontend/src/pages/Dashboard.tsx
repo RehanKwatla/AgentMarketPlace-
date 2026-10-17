@@ -12,7 +12,9 @@ import {
   Clock,
   ExternalLink,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Send,
+  FileText
 } from 'lucide-react';
 import { useMarketplace } from '../context/MarketplaceContext';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -21,6 +23,8 @@ import { CallsOverTimeChart } from '../components/dashboard/CallsOverTimeChart';
 import { PaymentActivityChart } from '../components/dashboard/PaymentActivityChart';
 import { OutcomeDistributionChart } from '../components/dashboard/OutcomeDistributionChart';
 import { SystemReadinessMatrix } from '../components/dashboard/SystemReadinessMatrix';
+import { ExecutionLifecycle } from '../components/dashboard/ExecutionLifecycle';
+import { MetricCardSkeleton, ActivityRowSkeleton } from '../components/ui/Skeleton';
 
 export const Dashboard: React.FC = () => {
   const { 
@@ -31,6 +35,7 @@ export const Dashboard: React.FC = () => {
     pendingReconciliations, 
     totalVolumeUsdc,
     recentTasks,
+    isLoading,
     refreshData,
     setSelectedLedgerRecord,
   } = useMarketplace();
@@ -73,11 +78,11 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 max-w-[1600px] mx-auto pb-12">
+    <div className="space-y-8 max-w-[1600px] mx-auto pb-12 animate-fade-in">
       {/* 1. Restrained Header & Live Status */}
       <PageHeader
-        title="Operational Dashboard"
-        description="Autonomous agent execution telemetry, cryptographic settlement audit, and subsystem readiness on Base Sepolia."
+        title="Agent Marketplace"
+        description="Discover registered services, execute paid tasks, and inspect every transaction across the Base Sepolia settlement ledger."
         badge={
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#DED8CD]/60 border border-[#CFC7BB] text-[11px] font-mono text-[#82786F]">
             <span className={`w-2 h-2 rounded-full ${isHealthy ? 'bg-[#38865B] animate-pulse' : 'bg-[#B84040]'}`} />
@@ -112,11 +117,20 @@ export const Dashboard: React.FC = () => {
 
       {/* 2. Key Metrics (~20-30% visual weight) */}
       <section aria-label="Key Operational Metrics">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="metric-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {isLoading ? (
+            <>
+              <MetricCardSkeleton />
+              <MetricCardSkeleton />
+              <MetricCardSkeleton />
+              <MetricCardSkeleton />
+            </>
+          ) : (
+            <>
           {/* Metric 1: Registered Services */}
           <div
             onClick={() => navigate('/marketplace')}
-            className="group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 transition-all cursor-pointer flex flex-col justify-between space-y-4"
+            className="card-lift group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 transition-all cursor-pointer flex flex-col justify-between space-y-4"
             role="button"
             tabIndex={0}
             onKeyDown={(e) => e.key === 'Enter' && navigate('/marketplace')}
@@ -154,7 +168,7 @@ export const Dashboard: React.FC = () => {
           {/* Metric 2: Total Recorded Calls */}
           <div
             onClick={() => navigate('/ledger')}
-            className="group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 transition-all cursor-pointer flex flex-col justify-between space-y-4"
+            className="card-lift group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 transition-all cursor-pointer flex flex-col justify-between space-y-4"
             role="button"
             tabIndex={0}
             onKeyDown={(e) => e.key === 'Enter' && navigate('/ledger')}
@@ -192,7 +206,7 @@ export const Dashboard: React.FC = () => {
           {/* Metric 3: Total Paid in USDC */}
           <div
             onClick={() => navigate('/ledger')}
-            className="group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 transition-all cursor-pointer flex flex-col justify-between space-y-4"
+            className="card-lift group relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] hover:border-[#7D292D]/50 hover:bg-[#FFFFFF] shadow-sm p-5 transition-all cursor-pointer flex flex-col justify-between space-y-4"
             role="button"
             tabIndex={0}
             onKeyDown={(e) => e.key === 'Enter' && navigate('/ledger')}
@@ -229,7 +243,7 @@ export const Dashboard: React.FC = () => {
 
           {/* Metric 4: Success Rate (Strictly No Fabrication) */}
           <div
-            className="relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm p-5 flex flex-col justify-between space-y-4"
+            className="card-lift relative rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm p-5 flex flex-col justify-between space-y-4"
             title={hasTelemetry ? `${successfulCalls} of ${totalCalls} calls completed successfully` : 'No execution calls recorded yet'}
           >
             <div className="flex items-center justify-between text-[#82786F]">
@@ -276,6 +290,8 @@ export const Dashboard: React.FC = () => {
               </span>
             </div>
           </div>
+            </>
+          )}
         </div>
       </section>
 
@@ -338,7 +354,13 @@ export const Dashboard: React.FC = () => {
             </div>
 
             <div className="rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm overflow-hidden">
-              {recentTasks.length === 0 ? (
+              {isLoading ? (
+                <div className="divide-y divide-[#CFC7BB]/60">
+                  <ActivityRowSkeleton />
+                  <ActivityRowSkeleton />
+                  <ActivityRowSkeleton />
+                </div>
+              ) : recentTasks.length === 0 ? (
                 <div className="py-12 px-6 text-center space-y-3">
                   <div className="w-10 h-10 rounded-lg bg-[#DED8CD]/60 border border-[#CFC7BB] flex items-center justify-center text-[#82786F] mx-auto">
                     <Cpu className="w-5 h-5" />
@@ -421,7 +443,13 @@ export const Dashboard: React.FC = () => {
             </div>
 
             <div className="rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm overflow-hidden">
-              {ledger.length === 0 ? (
+              {isLoading ? (
+                <div className="divide-y divide-[#CFC7BB]/60">
+                  <ActivityRowSkeleton />
+                  <ActivityRowSkeleton />
+                  <ActivityRowSkeleton />
+                </div>
+              ) : ledger.length === 0 ? (
                 <div className="py-12 px-6 text-center space-y-3">
                   <div className="w-10 h-10 rounded-lg bg-[#DED8CD]/60 border border-[#CFC7BB] flex items-center justify-center text-[#82786F] mx-auto">
                     <Clock className="w-5 h-5" />
@@ -495,6 +523,71 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Execution lifecycle reference */}
+        <ExecutionLifecycle />
+
+        {/* Quick actions into the real workspace pages */}
+        <section aria-label="Quick actions" className="space-y-3 animate-rise">
+          <div>
+            <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#82786F]">
+              Quick Actions
+            </h2>
+            <p className="text-[11px] text-[#82786F] mt-0.5">
+              Jump straight into the operational surfaces of the marketplace.
+            </p>
+          </div>
+
+          <div className="metric-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <NavLink
+              to="/marketplace"
+              className="card-lift group rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm p-4 space-y-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7D292D]"
+            >
+              <div className="flex items-center justify-between">
+                <Layers className="w-4 h-4 text-[#7D292D]" />
+                <ArrowRight className="w-3.5 h-3.5 text-[#82786F] group-hover:translate-x-0.5 group-hover:text-[#7D292D] transition-transform" />
+              </div>
+              <div className="text-xs font-semibold text-[#241B19] font-sans">Explore Marketplace</div>
+              <p className="text-[11px] text-[#82786F]">Browse registered services, prices, and declared capabilities.</p>
+            </NavLink>
+
+            <NavLink
+              to="/buyer"
+              className="card-lift group rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm p-4 space-y-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7D292D]"
+            >
+              <div className="flex items-center justify-between">
+                <Send className="w-4 h-4 text-[#7D292D]" />
+                <ArrowRight className="w-3.5 h-3.5 text-[#82786F] group-hover:translate-x-0.5 group-hover:text-[#7D292D] transition-transform" />
+              </div>
+              <div className="text-xs font-semibold text-[#241B19] font-sans">Submit a Buyer Task</div>
+              <p className="text-[11px] text-[#82786F]">Formulate a multi-hop plan with an explicit budget cap.</p>
+            </NavLink>
+
+            <NavLink
+              to="/payments"
+              className="card-lift group rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm p-4 space-y-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7D292D]"
+            >
+              <div className="flex items-center justify-between">
+                <Coins className="w-4 h-4 text-[#7D292D]" />
+                <ArrowRight className="w-3.5 h-3.5 text-[#82786F] group-hover:translate-x-0.5 group-hover:text-[#7D292D] transition-transform" />
+              </div>
+              <div className="text-xs font-semibold text-[#241B19] font-sans">Inspect Payments</div>
+              <p className="text-[11px] text-[#82786F]">Review authorizations, settlement attempts, and reconciliation queues.</p>
+            </NavLink>
+
+            <NavLink
+              to="/ledger"
+              className="card-lift group rounded-xl border border-[#CFC7BB] bg-[#F7F4EE] shadow-sm p-4 space-y-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7D292D]"
+            >
+              <div className="flex items-center justify-between">
+                <FileText className="w-4 h-4 text-[#7D292D]" />
+                <ArrowRight className="w-3.5 h-3.5 text-[#82786F] group-hover:translate-x-0.5 group-hover:text-[#7D292D] transition-transform" />
+              </div>
+              <div className="text-xs font-semibold text-[#241B19] font-sans">View Audit Ledger</div>
+              <p className="text-[11px] text-[#82786F]">Trace every recorded call, receipt, and settlement reference.</p>
+            </NavLink>
+          </div>
+        </section>
 
         {/* System Readiness Matrix */}
         <SystemReadinessMatrix

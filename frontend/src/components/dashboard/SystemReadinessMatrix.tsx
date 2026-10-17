@@ -11,6 +11,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { HealthInfo, PaymentSubsystemStatus, ServiceDefinition, LedgerRecord } from '../../types';
+import { getApiEndpointLabel } from '../../api/client';
 
 interface SystemReadinessMatrixProps {
   healthInfo: HealthInfo | null;
@@ -86,7 +87,7 @@ export const SystemReadinessMatrix: React.FC<SystemReadinessMatrixProps> = ({
       stateLabel: apiState === 'ready' ? 'Ready' : apiState === 'degraded' ? 'Degraded' : 'Unavailable',
       detail: healthInfo 
         ? `FastAPI ${healthInfo.version || 'v1.0.0'} • Network: ${healthInfo.network || '84532'}`
-        : 'Cannot reach FastAPI endpoint at http://localhost:8000',
+        : `Cannot reach FastAPI endpoint at ${getApiEndpointLabel()}`,
       latencyOrMeta: healthInfo ? 'HTTP 200 OK' : 'Connection failed',
     },
     {

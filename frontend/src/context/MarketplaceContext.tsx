@@ -32,6 +32,8 @@ interface MarketplaceContextType {
   isReconciling: boolean;
   totalVolumeUsdc: string;
   fetchError: string | null;
+  /** True until the first backend snapshot has resolved (success or failure). */
+  isLoading: boolean;
   refreshData: () => Promise<void>;
 
   // Recent tasks history
@@ -79,6 +81,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [pendingReconciliations, setPendingReconciliations] = useState<Record<string, any>>({});
   const [isReconciling, setIsReconciling] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Buyer task states
@@ -126,6 +129,8 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
     } catch (err: any) {
       console.error('Failed to load marketplace data:', err);
       setFetchError(err.message || 'Error communicating with backend');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -293,6 +298,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
         isReconciling,
         totalVolumeUsdc,
         fetchError,
+        isLoading,
         refreshData: loadData,
         recentTasks,
         searchQuery,

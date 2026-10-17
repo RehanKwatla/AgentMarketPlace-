@@ -180,7 +180,7 @@ export const Marketplace: React.FC = () => {
   }, [services]);
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-fade-in">
       {/* 1. Page Header */}
       <PageHeader
         title="Service Marketplace"

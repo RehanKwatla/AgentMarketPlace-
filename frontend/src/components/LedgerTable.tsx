@@ -173,16 +173,32 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                     <td className="py-3 px-4 hidden lg:table-cell">
                       {record.tx_hash ? (
                         explorerUrl ? (
-                          <a
-                            href={explorerUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-[#7D292D] hover:underline flex items-center gap-1 text-[11px]"
-                          >
-                            <span>{record.tx_hash.slice(0, 8)}...{record.tx_hash.slice(-4)}</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
+                          <div className="flex items-center gap-1.5">
+                            <a
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[#7D292D] hover:underline flex items-center gap-1 text-[11px]"
+                              title={record.tx_hash}
+                            >
+                              <span>{record.tx_hash.slice(0, 8)}...{record.tx_hash.slice(-4)}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={(e) => copyToClipboard(record.tx_hash as string, `tx_${record.request_id}`, e)}
+                              className="text-[#82786F] hover:text-[#7D292D] transition-colors cursor-pointer"
+                              title="Copy transaction hash"
+                              aria-label="Copy transaction hash"
+                            >
+                              {copiedKey === `tx_${record.request_id}` ? (
+                                <Check className="w-3 h-3 text-[#38865B]" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
                         ) : record.tx_hash ? (
                           <span className="text-[#A3A3A3] font-mono text-[11px]" title={record.tx_hash}>
                             {record.tx_hash.startsWith('rec_') ? 'Receipt: ' : 'Proof: '}

@@ -7,6 +7,7 @@ import {
   Lock, 
   Cpu 
 } from 'lucide-react';
+import { getApiEndpointLabel } from '../api/client';
 
 export const Docs: React.FC = () => {
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
@@ -54,7 +55,7 @@ print(task_result.final_result)`;
         </div>
 
         <a
-          href="http://localhost:8000/docs"
+          href={`${getApiEndpointLabel()}/docs`}
           target="_blank"
           rel="noopener noreferrer"
           className="px-3.5 py-1.5 rounded-lg bg-[#FFFFFF] hover:bg-[#D4D4D4] text-[#0A0A0A] font-medium text-xs transition-colors flex items-center gap-1.5 self-start md:self-auto cursor-pointer"

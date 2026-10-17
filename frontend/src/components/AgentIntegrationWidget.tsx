@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Terminal, Copy, Check, ExternalLink, Code2 } from 'lucide-react';
+import { getApiEndpointLabel } from '../api/client';
 
 export const AgentIntegrationWidget: React.FC = () => {
   const [copied, setCopied] = useState(false);
@@ -66,7 +67,7 @@ if response.status_code == 402:
       <div className="flex items-center justify-between text-xs text-[#82786F] font-sans pt-1">
         <span>No API keys or vendor accounts required. Micropayments settle automatically per call.</span>
         <a 
-          href="http://localhost:8000/docs" 
+          href={`${getApiEndpointLabel()}/docs`} 
           target="_blank" 
           rel="noopener noreferrer" 
           className="text-[#7D292D] hover:underline inline-flex items-center gap-1 font-mono text-[11px]"
