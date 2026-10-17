@@ -183,7 +183,7 @@ class SettlementVerifier:
 
     async def _verify_facilitator_receipt(self, receipt_id: str) -> Tuple[bool, str]:
         """Verify receipt with configured x402 facilitator."""
-        if self.test_mode or receipt_id.startswith("rec_") or receipt_id.startswith("receipt_"):
+        if self.test_mode:
             if receipt_id and len(receipt_id) >= 6:
                 return True, receipt_id
             return False, receipt_id
