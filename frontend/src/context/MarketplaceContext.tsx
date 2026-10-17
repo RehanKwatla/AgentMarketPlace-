@@ -8,7 +8,8 @@ import {
   PlannedStepEstimate,
   HealthInfo,
   PaymentSubsystemStatus,
-  TaskHistoryItem
+  TaskHistoryItem,
+  PaymentDashboardData
 } from '../types';
 import { 
   fetchHealth, 
@@ -19,7 +20,8 @@ import {
   fetchLedgerRecord,
   fetchPaymentStatus,
   fetchPendingReconciliations,
-  reconcilePaymentAttempt
+  reconcilePaymentAttempt,
+  fetchPaymentDashboard
 } from '../api/client';
 
 interface MarketplaceContextType {
@@ -28,6 +30,7 @@ interface MarketplaceContextType {
   reputations: Record<string, ReputationMetrics>;
   healthInfo: HealthInfo | null;
   paymentStatus: PaymentSubsystemStatus | null;
+  paymentDashboard: PaymentDashboardData | null;
   pendingReconciliations: Record<string, any>;
   isReconciling: boolean;
   totalVolumeUsdc: string;
@@ -78,6 +81,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [reputations, setReputations] = useState<Record<string, ReputationMetrics>>({});
   const [healthInfo, setHealthInfo] = useState<HealthInfo | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentSubsystemStatus | null>(null);
+  const [paymentDashboard, setPaymentDashboard] = useState<PaymentDashboardData | null>(null);
   const [pendingReconciliations, setPendingReconciliations] = useState<Record<string, any>>({});
   const [isReconciling, setIsReconciling] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -111,13 +115,14 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
   const loadData = async () => {
     setFetchError(null);
     try {
-      const [hData, sData, lData, rData, pData, prData] = await Promise.all([
+      const [hData, sData, lData, rData, pData, prData, dashData] = await Promise.all([
         fetchHealth().catch(() => null),
         fetchServices().catch(() => ({ services: [], total: 0 })),
         fetchLedger().catch(() => ({ records: [], total: 0 })),
         fetchReputations().catch(() => ({})),
         fetchPaymentStatus().catch(() => null),
-        fetchPendingReconciliations().catch(() => ({ pending_reconciliations: {}, total: 0 }))
+        fetchPendingReconciliations().catch(() => ({ pending_reconciliations: {}, total: 0 })),
+        fetchPaymentDashboard().catch(() => null)
       ]);
 
       setHealthInfo(hData);
@@ -126,6 +131,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
       setReputations(rData || {});
       setPaymentStatus(pData);
       setPendingReconciliations(prData.pending_reconciliations || {});
+      setPaymentDashboard(dashData);
     } catch (err: any) {
       console.error('Failed to load marketplace data:', err);
       setFetchError(err.message || 'Error communicating with backend');
@@ -294,6 +300,7 @@ export const MarketplaceProvider: React.FC<{ children: ReactNode }> = ({ childre
         reputations,
         healthInfo,
         paymentStatus,
+        paymentDashboard,
         pendingReconciliations,
         isReconciling,
         totalVolumeUsdc,

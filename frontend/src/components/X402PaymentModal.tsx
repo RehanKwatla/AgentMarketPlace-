@@ -11,7 +11,8 @@ import {
   Clock,
   Coins
 } from 'lucide-react';
-import { LedgerRecord } from '../types';
+import { LedgerRecord, isValidBaseSepoliaTxHash, getBaseSepoliaExplorerUrl, TxVerificationInfo } from '../types';
+import { verifyTransaction } from '../api/client';
 import { mapPaymentStatus } from '../utils/statusMapping';
 import { StatusBadge } from './ui/StatusBadge';
 import { CurrencyConversion } from './ui/CurrencyConversion';
@@ -47,6 +48,8 @@ interface X402PaymentModalProps {
 export const X402PaymentModal: React.FC<X402PaymentModalProps> = ({ record, onClose }) => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'summary' | 'x402_challenge' | 'eip712' | 'raw_json'>('summary');
+  const [verificationResult, setVerificationResult] = useState<TxVerificationInfo | null>(null);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   if (!record) return null;
 
@@ -58,10 +61,23 @@ export const X402PaymentModal: React.FC<X402PaymentModalProps> = ({ record, onCl
 
   const statusInfo = mapPaymentStatus(record.status);
   
-  // Format transaction hash and explorer link
+  // Format transaction hash and explorer link with strict Base Sepolia hex check
   const txHash = record.tx_hash;
-  const isRealOnChainTx = txHash && txHash.startsWith('0x') && txHash.length >= 42;
-  const explorerUrl = isRealOnChainTx ? `https://sepolia.basescan.org/tx/${txHash}` : null;
+  const isRealOnChainTx = isValidBaseSepoliaTxHash(txHash);
+  const explorerUrl = getBaseSepoliaExplorerUrl(txHash);
+
+  const handleVerifyOnChain = async () => {
+    if (!txHash || !isRealOnChainTx || isVerifying) return;
+    setIsVerifying(true);
+    try {
+      const res = await verifyTransaction(txHash);
+      setVerificationResult(res);
+    } catch (err) {
+      // Graceful error handling
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   const tokenContract = (record as any).token || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
   const network = (record as any).network || 'eip155:84532';
@@ -346,6 +362,17 @@ export const X402PaymentModal: React.FC<X402PaymentModalProps> = ({ record, onCl
                         {copiedKey === 'txHash' ? <Check className="w-3.5 h-3.5 text-[#38865B]" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
 
+                      {isRealOnChainTx && (
+                        <button
+                          type="button"
+                          onClick={handleVerifyOnChain}
+                          disabled={isVerifying}
+                          className="px-2 py-1 rounded bg-[#DED8CD] hover:bg-[#CFC7BB] text-[#241B19] font-medium text-[11px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <span>{isVerifying ? 'Checking...' : 'Verify RPC'}</span>
+                        </button>
+                      )}
+
                       {explorerUrl && (
                         <a
                           href={explorerUrl}
@@ -365,6 +392,17 @@ export const X402PaymentModal: React.FC<X402PaymentModalProps> = ({ record, onCl
                     <span>
                       No public on-chain transaction hash recorded. Attempt may be held in suspense, uncharged, or validated via local EIP-712 cryptographic authorization.
                     </span>
+                  </div>
+                )}
+
+                {verificationResult && (
+                  <div className={`p-2.5 rounded-lg text-xs font-mono flex items-center justify-between border ${
+                    verificationResult.is_confirmed
+                      ? 'bg-[#38865B]/10 border-[#38865B]/30 text-[#38865B]'
+                      : 'bg-[#A86E24]/10 border-[#A86E24]/30 text-[#A86E24]'
+                  }`}>
+                    <span>On-Chain Status: {verificationResult.is_confirmed ? 'Confirmed on Base Sepolia' : 'Unconfirmed / Pending Mining'}</span>
+                    <span className="text-[10px] uppercase font-bold">{verificationResult.status}</span>
                   </div>
                 )}
               </div>

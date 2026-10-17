@@ -297,6 +297,34 @@ export interface PaymentDashboardData {
   }>;
 }
 
+export interface WalletBalanceInfo {
+  address: string;
+  network: string;
+  chain_id: number;
+  token: string;
+  token_address: string;
+  balance_base_units: number;
+  balance_usdc: string;
+  native_balance_wei: string;
+  native_balance_eth: string;
+  is_verified_onchain: boolean;
+  source: string;
+  cached?: boolean;
+}
+
+export interface TxVerificationInfo {
+  tx_hash: string;
+  network: string;
+  service_id: string;
+  amount_usdc: string;
+  amount_units: number;
+  is_confirmed: boolean;
+  status: string;
+  evidence_type: string;
+  explorer_url: string | null;
+  settlement_proof: string | null;
+}
+
 export const isValidBaseSepoliaTxHash = (hash: string | null | undefined): boolean => {
   if (!hash) return false;
   // Strict 66-character hex string starting with 0x (Base Sepolia transaction hash)
@@ -308,3 +336,4 @@ export const getBaseSepoliaExplorerUrl = (hash: string | null | undefined): stri
   if (!isValidBaseSepoliaTxHash(hash)) return null;
   return `https://sepolia.basescan.org/tx/${hash?.trim()}`;
 };
+

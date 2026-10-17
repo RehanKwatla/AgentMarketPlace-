@@ -9,9 +9,12 @@ import {
   Shield, 
   AlertCircle, 
   Lock,
-  Star
+  Star,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { fetchWalletBalance } from '../api/client';
+import { WalletBalanceInfo } from '../types';
 
 export const WalletManagementPage: React.FC = () => {
   const { wallets, connectAndLinkWallet, updateWalletRole, unlinkWallet, isAuthenticated } = useAuth();
@@ -21,6 +24,27 @@ export const WalletManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [balances, setBalances] = useState<Record<string, WalletBalanceInfo>>({});
+  const [isLoadingBalances, setIsLoadingBalances] = useState<boolean>(false);
+
+  // Fetch verified on-chain balances from backend
+  const loadBalances = async () => {
+    if (wallets.length === 0) return;
+    setIsLoadingBalances(true);
+    for (const w of wallets) {
+      try {
+        const bal = await fetchWalletBalance(w.address);
+        setBalances(prev => ({ ...prev, [w.address]: bal }));
+      } catch (err) {
+        // Fallback safely if offline
+      }
+    }
+    setIsLoadingBalances(false);
+  };
+
+  React.useEffect(() => {
+    loadBalances();
+  }, [wallets]);
 
   if (!isAuthenticated) {
     return (
@@ -169,7 +193,21 @@ export const WalletManagementPage: React.FC = () => {
 
       {/* 3. Linked Wallets List */}
       <div className="bg-[#FFFFFF] border border-[#CFC7BB] rounded-xl p-6 space-y-4 shadow-sm">
-        <h2 className="text-base font-bold font-serif text-[#241B19]">Active Linked Wallets ({wallets.length})</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold font-serif text-[#241B19]">Active Linked Wallets ({wallets.length})</h2>
+          {wallets.length > 0 && (
+            <button
+              type="button"
+              onClick={loadBalances}
+              disabled={isLoadingBalances}
+              className="text-xs text-[#82786F] hover:text-[#241B19] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Refresh on-chain balances"
+            >
+              <RefreshCw size={13} className={isLoadingBalances ? 'animate-spin' : ''} />
+              <span>{isLoadingBalances ? 'Refreshing...' : 'Refresh Balances'}</span>
+            </button>
+          )}
+        </div>
 
         {wallets.length === 0 ? (
           <div className="p-8 text-center text-xs text-[#82786F] space-y-2">
@@ -213,6 +251,26 @@ export const WalletManagementPage: React.FC = () => {
                     <span>Verified: {new Date(w.verified_at).toLocaleDateString()}</span>
                     <span>Chain: Base Sepolia ({w.chain_id})</span>
                   </div>
+
+                  {balances[w.address] && (
+                    <div className="text-[11px] font-mono flex items-center gap-2 pt-1 flex-wrap">
+                      <span className="font-bold text-[#38865B] bg-[#38865B]/10 px-2 py-0.5 rounded border border-[#38865B]/20">
+                        {balances[w.address].balance_usdc} USDC
+                      </span>
+                      <span className="text-[#82786F]">
+                        {balances[w.address].native_balance_eth} ETH
+                      </span>
+                      {balances[w.address].is_verified_onchain ? (
+                        <span className="text-[10px] text-[#38865B] bg-[#38865B]/15 px-1.5 py-0.5 rounded font-medium">
+                          ✓ On-Chain RPC
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#82786F] bg-[#DED8CD] px-1.5 py-0.5 rounded">
+                          Fallback
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

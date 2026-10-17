@@ -5,7 +5,9 @@ import {
   ReputationMetrics, 
   HealthInfo,
   TaskDetailResponse,
-  PaymentDashboardData
+  PaymentDashboardData,
+  WalletBalanceInfo,
+  TxVerificationInfo
 } from '../types';
 
 /**
@@ -14,20 +16,20 @@ import {
  * Rules:
  * 1. Use the Vite same-origin proxy for local development when the configured
  *    target is localhost; this avoids browser CORS for local API calls.
- * 2. If a non-local VITE_API_BASE_URL is configured, trim trailing slashes and return it.
+ * 2. If a non-local VITE_API_BASE_URL is configured, trim trailing slashes and accidental /api prefix and return it.
  * 3. In production builds (import.meta.env.PROD === true or MODE === 'production'):
  *    Reject missing configuration explicitly. Never silently route production calls to localhost.
  * 3. In local development / test environments:
  *    Safely fall back to http://localhost:8000 for seamless local development.
  */
-export function getApiBaseUrl(): string {
-  const env = (import.meta as any).env || {};
+export function getApiBaseUrl(customEnv?: Record<string, any>): string {
+  const env = customEnv || (import.meta as any).env || {};
   const rawUrl = env.VITE_API_BASE_URL;
   const isProd = env.PROD === true || env.MODE === 'production';
   const isDev = env.DEV === true || env.MODE === 'development';
 
   if (rawUrl && typeof rawUrl === 'string' && rawUrl.trim().length > 0) {
-    const normalized = rawUrl.trim().replace(/\/+$/, '');
+    const normalized = rawUrl.trim().replace(/\/+$/, '').replace(/\/api$/, '');
     if (isDev && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) {
       return '';
     }
@@ -107,28 +109,55 @@ export interface SubmitBuyerTaskOptions {
   preferred_categories?: string[];
   required_categories?: string[];
   execute_now?: boolean;
+  idempotency_key?: string;
 }
 
 export async function submitBuyerTask(
   taskOrOptions: string | SubmitBuyerTaskOptions, 
-  budgetUsdc?: string
+  budgetUsdc?: string,
+  idempotencyKey?: string
 ): Promise<TaskResponse> {
-  const payload = typeof taskOrOptions === 'string'
-    ? { task: taskOrOptions, budget_usdc: budgetUsdc || '0.05' }
-    : {
-        task: taskOrOptions.task,
-        budget_usdc: taskOrOptions.budget_usdc,
-        max_concurrency: taskOrOptions.max_concurrency ?? 3,
-        preferred_categories: taskOrOptions.preferred_categories,
-        required_categories: taskOrOptions.required_categories,
-        execute_now: taskOrOptions.execute_now ?? true,
-      };
+  const options: SubmitBuyerTaskOptions = typeof taskOrOptions === 'string'
+    ? { task: taskOrOptions, budget_usdc: budgetUsdc || '0.05', idempotency_key: idempotencyKey }
+    : taskOrOptions;
 
-  const res = await fetch(apiUrl('/api/v1/buyer/tasks'), {
+  const key = options.idempotency_key || idempotencyKey || (
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `idem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  );
+
+  const payload = {
+    task: options.task,
+    budget_usdc: options.budget_usdc,
+    max_concurrency: options.max_concurrency ?? 3,
+    preferred_categories: options.preferred_categories,
+    required_categories: options.required_categories,
+    execute_now: options.execute_now ?? true,
+    idempotency_key: key,
+  };
+
+  // Primary verified endpoint: POST /api/v1/tasks
+  let res = await fetch(apiUrl('/api/v1/tasks'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Idempotency-Key': key
+    },
     body: JSON.stringify(payload),
   });
+
+  // Backward compatibility fallback to /api/v1/buyer/tasks if primary 404
+  if (res.status === 404) {
+    res = await fetch(apiUrl('/api/v1/buyer/tasks'), {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Idempotency-Key': key
+      },
+      body: JSON.stringify(payload),
+    });
+  }
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ detail: res.statusText }));
@@ -140,7 +169,56 @@ export async function submitBuyerTask(
     }
     throw new Error(errorMsg);
   }
-  return res.json();
+
+  const data = await res.json();
+
+  // Normalize so both new TaskDetailResponse and legacy TaskResponse interfaces work seamlessly
+  const calls = data.calls || [];
+  const executions = data.executions || calls.map((c: any, idx: number) => ({
+    step: c.step || idx + 1,
+    service_id: c.service_id,
+    request_id: c.call_id || `req_${c.service_id}`,
+    price_paid_usdc: c.amount_usdc || c.amount_paid_usdc || '0.000000',
+    tx_hash: c.transaction_hash || c.tx_hash || null,
+    status: c.status,
+    latency_ms: c.latency_ms || 0,
+    output: c.output,
+    error: c.error,
+  }));
+
+  const selectedServices = data.selected_services || calls.map((c: any) => c.service_id);
+  const totalCost = data.spent_usdc || data.total_cost_usdc || '0.000000';
+  const budgetAllocated = data.budget_usdc || data.budget_allocated_usdc || options.budget_usdc;
+
+  let finalNarrative = data.final_result;
+  if (!finalNarrative && data.result && typeof data.result === 'object') {
+    finalNarrative = data.result.summary || JSON.stringify(data.result);
+  }
+  if (!finalNarrative && data.status === 'refused') {
+    finalNarrative = data.failure_reason || 'Task refused: Insufficient budget allocated.';
+  }
+
+  const warnings = data.explanation?.warnings || data.errors_and_fallbacks || [];
+
+  return {
+    ...data,
+    task_id: data.task_id,
+    status: data.status,
+    budget_allocated_usdc: budgetAllocated,
+    total_cost_usdc: totalCost,
+    cost_explanation: data.cost_explanation || data.failure_reason || `Allocated ${budgetAllocated} USDC, spent ${totalCost} USDC.`,
+    selected_services: selectedServices,
+    executions: executions,
+    final_result: finalNarrative || null,
+    errors_and_fallbacks: warnings,
+    provenance: data.provenance || calls.map((c: any, idx: number) => ({
+      step: c.step || idx + 1,
+      service_id: c.service_id,
+      request_id: c.call_id || `req_${c.service_id}`,
+      tx_hash: c.transaction_hash || c.tx_hash || null,
+      timestamp: c.created_at || c.timestamp,
+    })),
+  };
 }
 
 export async function fetchLedger(statusFilter?: string, serviceIdFilter?: string, limit = 100, offset = 0): Promise<{ records: LedgerRecord[]; total: number }> {
@@ -210,9 +288,13 @@ export async function fetchTaskCalls(taskId: string): Promise<{ task_id: string;
 }
 
 export async function fetchTaskDetail(taskId: string): Promise<TaskDetailResponse> {
-  const res = await fetch(apiUrl(`/api/v1/buyer/tasks/${taskId}`));
-  if (!res.ok) throw new Error(`Task ${taskId} not found or unreachable`);
-  return res.json();
+  // Primary verified endpoint: GET /api/v1/tasks/{taskId}
+  const res = await fetch(apiUrl(`/api/v1/tasks/${taskId}`));
+  if (res.ok) return res.json();
+  // Fallback to legacy path if needed
+  const legacyRes = await fetch(apiUrl(`/api/v1/buyer/tasks/${taskId}`));
+  if (!legacyRes.ok) throw new Error(`Task ${taskId} not found or unreachable`);
+  return legacyRes.json();
 }
 
 export async function fetchTaskResult(taskId: string): Promise<any> {
@@ -224,6 +306,18 @@ export async function fetchTaskResult(taskId: string): Promise<any> {
 export async function fetchPaymentDashboard(): Promise<PaymentDashboardData> {
   const res = await fetch(apiUrl('/api/v1/payments/dashboard'));
   if (!res.ok) throw new Error('Failed to fetch payment dashboard metrics');
+  return res.json();
+}
+
+export async function fetchWalletBalance(address: string): Promise<WalletBalanceInfo> {
+  const res = await fetch(apiUrl(`/api/v1/wallets/${address}/balance`));
+  if (!res.ok) throw new Error(`Failed to fetch wallet balance for ${address}: ${res.statusText}`);
+  return res.json();
+}
+
+export async function verifyTransaction(txHash: string): Promise<TxVerificationInfo> {
+  const res = await fetch(apiUrl(`/api/v1/payments/verify-tx/${txHash}`));
+  if (!res.ok) throw new Error(`Failed to verify transaction ${txHash}: ${res.statusText}`);
   return res.json();
 }
 
